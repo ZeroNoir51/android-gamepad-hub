@@ -1,10 +1,12 @@
-"""Plantilla para un juego real (los archivos que empiezan por "_" no se cargan).
+"""Plantilla de plugin (API 1). Las carpetas que empiezan por "_" no se cargan.
 
-Copia este archivo como plugins/mi_juego.py y rellena offsets.
-Los offsets se encuentran con Cheat Engine (Windows/Wine), PINCE o scanmem
-(Linux), buscando el valor, cambiándolo en el juego y repitiendo hasta aislar
-la dirección; luego "pointer scan" para obtener una cadena estable desde un
-módulo (las direcciones directas cambian en cada arranque).
+Copia esta carpeta como plugins/mi_juego/, cambia "id" en plugin.json y aquí (deben
+coincidir; solo a-z, 0-9 y _) y rellena offsets. Para empaquetarla aparte:
+`sh tools/build-plugin.sh mi_juego`. Importa SOLO de server.plugin_api.
+
+Los offsets se encuentran con Cheat Engine (Windows/Wine), PINCE o scanmem (Linux),
+buscando el valor, cambiándolo en el juego y repitiendo hasta aislar la dirección;
+luego "pointer scan" para obtener una cadena estable desde un módulo.
 
 Con Proton/Wine el proceso suele llamarse "Juego.exe" y el .exe aparece en
 /proc/<pid>/maps, así que module_base('Juego.exe') funciona igual.
@@ -12,7 +14,7 @@ Con Proton/Wine el proceso suele llamarse "Juego.exe" y el .exe aparece en
 No uses esto en juegos online con anti-cheat: leer memoria puede considerarse
 trampa y acarrear un baneo, aunque sea solo lectura.
 """
-from server.plugins import Field, GamePlugin
+from server.plugin_api import Field, GamePlugin
 
 # Cadena estilo Cheat Engine: "Juego.exe"+0x01A2B3C0 -> 0x28 -> 0x10
 PLAYER_BASE = 0x01A2B3C0

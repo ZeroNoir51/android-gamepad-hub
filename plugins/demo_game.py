@@ -2,8 +2,7 @@
 import json
 from pathlib import Path
 
-from server.memory import MemoryReadError
-from server.plugins import Field, GamePlugin
+from server.plugin_api import Field, GamePlugin, MemoryReadError
 
 INFO = Path('/tmp/gamepad-demo.json')
 MAGIC = 0x42444847

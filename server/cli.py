@@ -7,6 +7,9 @@ USAGE = '''Uso:
   gamepad run %command%        opción de lanzamiento de Steam: lanza el juego y lee sus datos
   gamepad status [--json]      ¿está activo el servicio?, URL para Android y código
   gamepad code [--new]         muestra el código de acceso (--new: lo cambia y cierra las sesiones)
+  gamepad plugin list          plugins disponibles (incluidos e instalados)
+  gamepad plugin install <zip> instala o actualiza un plugin empaquetado (--yes: sin preguntar)
+  gamepad plugin remove <id>   desinstala un plugin
 '''
 
 
@@ -22,6 +25,9 @@ def main():
     if args[0] == 'run':
         from .launcher import main as run  # solo biblioteca estándar
         return run(args[1:])
+    if args[0] == 'plugin':
+        from .plugin_pkg import main as plugin
+        return plugin(args)
     if args[0] in ('status', 'code'):
         from .status import main as status
         return status(args)

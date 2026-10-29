@@ -1,4 +1,4 @@
-# GamePad Hub 0.2.5
+# GamePad Hub 0.3.0
 
 Android (navegador hoy, APK después) → Wi-Fi local → PC Linux: mando virtual, telemetría (FPS, frametimes, CPU/GPU, RAM, latencia) y datos del juego leídos de memoria. **Nada se ejecuta como root.**
 
@@ -16,9 +16,10 @@ Linux (con `kernel.yama.ptrace_scope=1`, el valor de Ubuntu) solo deja leer la m
 El proyecto vive siempre en la misma carpeta, `~/proyectos/gamepad`, y los zips se llaman `gamepad-<versión>.zip` y se descomprimen en ella. Así la ruta del comando no cambia entre versiones.
 
 ```
-cd ~/proyectos && unzip -o gamepad-0.2.5.zip
+cd ~/proyectos && unzip -o gamepad-0.3.0.zip
 cd gamepad && sh tools/install.sh
 systemctl --user enable --now gamepad
+gamepad plugin install gamepad-plugin-ffrs-1.0.0.zip
 ```
 
 Para actualizar: `unzip -o` del zip nuevo en `~/proyectos`, `sh tools/install.sh` y `systemctl --user restart gamepad`.
@@ -105,17 +106,44 @@ Si tu configuración de MangoHud es un archivo por juego (`wine-*.conf`), el lan
 
 ## Plugins
 
-Viven en `plugins/` y los ejecuta solo el lanzador, sobre los descendientes del juego que lanzó. Son código Python con acceso de lectura a la memoria del juego: instala solo los que hayas revisado.
+Un plugin lee los datos de un juego concreto. Los ejecuta solo el lanzador, sobre los descendientes del juego que lanzó. Son código Python con acceso de lectura a la memoria del juego, con tu usuario: instala solo los que hayas revisado.
+
+**Se distribuyen aparte del hub**, como `gamepad-plugin-<id>-<versión>.zip`, y se instalan en `~/.local/share/gamepad/plugins/<id>/`. Actualizar el hub no los toca y actualizar un plugin no toca el hub. No hace falta reiniciar el servicio: se cargan cada vez que lanzas un juego.
+
+```
+gamepad plugin install gamepad-plugin-ffrs-1.0.0.zip    # instala o actualiza (pide confirmación)
+gamepad plugin list                                     # incluidos e instalados, con versión
+gamepad plugin remove ffrs                              # desinstala
+```
+
+Al instalar se valida el zip antes de escribir nada: una sola carpeta `<id>/`, sin rutas `..` ni enlaces simbólicos, tamaño acotado y API compatible.
+
+### Formato (API 1)
+
+```
+mi_juego/
+  plugin.json   {"id": "mi_juego", "name": "Mi Juego", "version": "1.0.0", "api": 1, "entry": "plugin.py"}
+  plugin.py     class Plugin(GamePlugin): ...   (importa SOLO de server.plugin_api)
+```
+
+- `id`: a-z, 0-9 y `_`; igual que el nombre de la carpeta y que `Plugin.id`.
+- `api`: versión de la API de plugins (`server/plugin_api.py`). Si el hub cambia la API de forma incompatible, los plugins de otra API no se cargan (en vez de fallar a medias).
+- Si un id está a la vez en `plugins/` del proyecto y en los instalados, gana el instalado.
+- Plantilla: `plugins/_template/`. Para empaquetar uno tuyo: `sh tools/build-plugin.sh <id>`.
+- Si `read()` tarda más de 5 s, se avisa en Android y no se lanza otra lectura hasta que termine.
 
 Cada campo declara dónde se muestra en Android con `section`:
 
-- `party`: tarjetas por miembro (`slot` 1-4) con nombre, HP y MP;
+- `party`: tarjetas por miembro (`slot` 1-4) con nombre, retrato, nivel, HP, MP y Limit;
 - `stats`: números grandes (Gil, EXP);
+- `header`: texto junto al nombre del juego;
 - `info`: texto pequeño de diagnóstico (solo se ve con *Debug* activado).
+
+`kind`: `number`, `bar` (con `max_key`), `text` o `image`. `tone` (color): `hp`, `mp`, `limit`, `gold`, `xp` o `neutral`.
 
 Si no hay juego con plugin, el panel derecho desaparece y la telemetría ocupa toda la pantalla.
 
-### Final Fantasy Resonance (`plugins/ffrs.py`)
+### Final Fantasy Resonance (plugin `ffrs`, se distribuye aparte)
 
 Solo para la build 24250053 de Steam: comprueba la cabecera PE del ejecutable (timestamp `0x6A586B2F`, tamaño `503013376`) y, si no coincide, no lee nada. Las rutas de memoria vienen de la tabla `FFRS_Steam_24250053_Starter.CT` (repositorio `shawnjohnjr/ff-RESONANCE-ct`); cada una está documentada al principio del plugin.
 
@@ -198,7 +226,9 @@ server/
   plugins.py    carga y ciclo de vida de plugins
   paths.py      rutas por usuario
   portraits.py  retratos del usuario: búsqueda y validación de rutas
-plugins/        ffrs.py, demo_game.py, _template.py
+  plugin_api.py API estable para plugins (lo único que importan)
+  plugin_pkg.py gamepad plugin list/install/remove
+plugins/        demo_game.py, _template/ (y ffrs/ en el repositorio; se empaqueta aparte)
 tests/          arnés de memoria UE5 sintética y tests (pytest)
 tools/          install.sh, gamepad.service, demo_game.py
 web/index.html  cliente Android

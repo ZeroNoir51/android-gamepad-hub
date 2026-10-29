@@ -27,17 +27,15 @@ HP y MP (la tabla no los lee; verificado con launcher.log del juego real):
     objetos y se usa uno solo si es el único con ese ID en +0xD0 (lo mismo con los ViewModels).
 
 Retratos: imágenes del propio usuario en ~/.local/share/gamepad/portraits/ffrs/
-(ver server/portraits.py). No se incluye arte del juego.
+(ver README.md de este plugin). No se incluye arte del juego.
 
 La EXP para el siguiente nivel se deriva de las curvas; compárala con el menú.
 """
 import collections
 import time
 
-from server.memory import MemoryReadError
-from server import portraits
-from server.plugins import Field, GamePlugin
-from server.ue import OBJ_CLASS, OBJ_OUTER, UEReader, pe_info
+from server.plugin_api import (OBJ_CLASS, OBJ_OUTER, Field, GamePlugin, MemoryReadError,
+                               PortraitFinder, UEReader, pe_info)
 
 MODULE = 'FFRS-Win64-Shipping.exe'
 BUILD = {'timestamp': 0x6A586B2F, 'image_size': 503013376}     # build 24250053
@@ -120,7 +118,7 @@ class Plugin(GamePlugin):
         self.vm_error_logged = False
         self.next_param_scan = 0.0
         self.hp_source = 'esperando datos'
-        self.portraits = portraits.Finder(self.id)
+        self.portraits = PortraitFinder(self.id)
         print(f'[ffrs] PID {proc.pid}, base 0x{self.base:x}, build {self.build}', flush=True)
 
     # --- partida y tablas ---

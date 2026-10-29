@@ -1,0 +1,2 @@
+plugins/ffrs export-ignore
+decky/node_modules export-ignore

@@ -38,6 +38,15 @@ if [ -d "$OLD_DATA/portraits" ] && [ ! -e "$NEW_DATA/portraits" ]; then
   echo "Migrado: retratos movidos a $NEW_DATA/portraits"
 fi
 
+# Plugins: desde 0.3 se instalan aparte (gamepad plugin install). Restos del formato antiguo:
+for f in "$DIR/plugins/ffrs.py" "$DIR/plugins/_template.py"; do
+  if [ -f "$f" ]; then rm -f "$f"; echo "Quitado $(basename "$f") antiguo (el plugin ahora se instala aparte)."; fi
+done
+PLUGINS="${XDG_DATA_HOME:-$HOME/.local/share}/gamepad/plugins"
+if [ ! -d "$PLUGINS/ffrs" ] && [ ! -d "$DIR/plugins/ffrs" ]; then
+  echo "Aviso: el plugin de FF Resonance no está instalado: gamepad plugin install gamepad-plugin-ffrs-<versión>.zip"
+fi
+
 systemctl --user daemon-reload
 
 echo "Instalado: $BIN/gamepad (proyecto en $DIR)"
@@ -56,3 +65,4 @@ echo "Arrancar (y al iniciar sesión): systemctl --user enable --now gamepad"
 echo "Reiniciar tras actualizar:      systemctl --user restart gamepad"
 echo "Ver el código de acceso:        journalctl --user -u gamepad -n 20"
 echo "Opción de Steam:                $BIN/gamepad run mangohud %command%"
+echo "Plugins:                        $BIN/gamepad plugin list"

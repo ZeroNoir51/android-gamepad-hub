@@ -10,7 +10,9 @@ sys.path.insert(0, str(ROOT / 'tests'))
 
 
 def load_plugin(stem):
-    spec = importlib.util.spec_from_file_location(f'test_plugin_{stem}', ROOT / 'plugins' / f'{stem}.py')
+    if not (ROOT / 'plugins' / stem / 'plugin.py').is_file():
+        pytest.skip(f'el plugin {stem} no está en este paquete (se distribuye aparte)')
+    spec = importlib.util.spec_from_file_location(f'test_plugin_{stem}', ROOT / 'plugins' / stem / 'plugin.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

@@ -107,7 +107,7 @@ async def run(cmd):
     bridge = Bridge(paths.socket_path())
     plugins = None
     try:
-        plugins = PluginManager(load_plugins(ROOT / 'plugins'), root_pid=os.getpid())
+        plugins = PluginManager(load_plugins([ROOT / 'plugins', paths.plugins_dir()]), root_pid=os.getpid())
     except Exception:
         print(f'[plugins] desactivados:\n{traceback.format_exc()}', flush=True)
 

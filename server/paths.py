@@ -58,3 +58,10 @@ def code_file():
 
 def sessions_file():
     return state_dir() / 'sessions.json'
+
+
+def plugins_dir():
+    """Plugins instalados con `gamepad plugin install` (fuera del proyecto)."""
+    path = data_dir() / 'plugins'
+    path.mkdir(mode=0o700, exist_ok=True)
+    return path
