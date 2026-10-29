@@ -16,10 +16,9 @@ no hay que cambiar nada en el PC. Sin librerías externas: la APK ocupa unos 32 
 
 1. Copia `gamepad-android-<versión>.apk` al handheld y ábrelo (Android pedirá permitir instalar apps de
    esa fuente).
-2. Abre **GamePad**, escribe `IP:puerto` del PC (por defecto `192.168.1.50:8888`) y el código de
-   `gamepad status`. La sesión dura 24 h.
+2. Abre **GamePad**, escribe `IP-DEL-PC:8888` y el código de `gamepad status`. La sesión dura 24 h.
 
-Las versiones nuevas se instalan encima: todas se firman con la clave de `keystore/` (guárdala).
+Las versiones nuevas se instalan encima solo si están firmadas con la misma clave (ver "Firma").
 
 ## Qué hay en esta versión (0.1)
 
@@ -42,8 +41,17 @@ Necesita JDK 17+ y el SDK de Android (plataforma 36). Con `sdk.dir` en `local.pr
 ./gradlew lintRelease
 ```
 
-Pruebas sin Android de la red y del estado del mando (`jvmtest/`), con el servicio en marcha
-(`gamepad serve --pad null --token TEST --port 8099`):
+### Firma
+
+`app/build.gradle` lee `keystore/keystore.properties` (`storeFile`, `storePassword`, `keyAlias`,
+`keyPassword`). Si no existe, la release se firma con la clave de depuración. `keystore/` está en
+`.gitignore`: guarda tu clave fuera del repositorio y usa siempre la misma, o Android no instalará las
+actualizaciones encima. Cómo crearla: ver el README principal.
+
+### Pruebas sin Android
+
+La red y el estado del mando (`Api`, `WsClient`, `PadState`) no dependen de Android y se prueban con el
+JDK (`jvmtest/`), con el servicio en marcha (`gamepad serve --pad null --token TEST --port 8099`):
 
 ```
 javac -encoding UTF-8 -d /tmp/jt app/src/main/java/dev/gamepad/client/{Api,WsClient,PadState}.java jvmtest/dev/gamepad/client/*.java

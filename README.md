@@ -1,40 +1,110 @@
-# GamePad Hub 0.3.0
+# GamePad Hub
 
-Android (navegador hoy, APK después) → Wi-Fi local → PC Linux: mando virtual, telemetría (FPS, frametimes, CPU/GPU, RAM, latencia) y datos del juego leídos de memoria. **Nada se ejecuta como root.**
+Usa un dispositivo Android (un handheld con mando, un móvil o una tablet) como **mando y segunda pantalla** de un PC con Linux, por Wi-Fi local:
 
-## Cómo está dividido
+- **Mando virtual Xbox 360** en el PC: sirve para Steam Big Picture y para cualquier juego.
+- **Telemetría** en Android: FPS y frametimes (vía MangoHud), CPU, GPU, RAM, latencia y jitter.
+- **Datos del juego** leídos de memoria con plugins por juego (vida, magia, dinero, equipo…).
+- **Nada se ejecuta como root.**
 
-| Proceso | Qué hace | Qué no puede hacer |
+Componentes:
+
+| Componente | Dónde corre | Qué es |
 |---|---|---|
-| `gamepad serve` (servicio permanente) | mando virtual, telemetría, web y WebSocket en el puerto 8888 | leer la memoria de ningún juego |
-| `gamepad run %command%` (lo lanza Steam) | lanza el juego como hijo, activa los logs de MangoHud y ejecuta el plugin | abrir puertos de red |
+| Servicio (`gamepad serve`) | PC (host) | Mando virtual, telemetría, web y WebSocket en el puerto 8888 |
+| Lanzador (`gamepad run %command%`) | PC, lo arranca Steam | Lanza el juego como hijo, activa MangoHud y ejecuta el plugin |
+| App Android (`android/`) | Android | Cliente nativo y ligero (≈32 KB). Recomendado |
+| Cliente web (`web/`) | Navegador del Android | Alternativa sin instalar nada: `http://IP-DEL-PC:8888` |
+| Plugins (`plugins/`) | PC, dentro del lanzador | Uno por juego; se distribuyen e instalan aparte |
+| Plugin de Decky (`decky/`) | PC, opcional | Aviso en Big Picture / Game Mode con la URL y el código |
 
-Linux (con `kernel.yama.ptrace_scope=1`, el valor de Ubuntu) solo deja leer la memoria de un proceso a su ancestro. Como el lanzador es el padre del juego, puede leerlo sin root. El servicio que da la cara a la red no tiene ese poder. Los dos se comunican por un socket Unix privado (`$XDG_RUNTIME_DIR/gamepad/hub.sock`, permisos 0600).
+## Requisitos
 
-## Instalación (con tu usuario, sin sudo)
+**Host (PC):** Linux con `systemd` (sesión de usuario), Python 3.9 o superior y acceso a `/dev/uinput` (ver [Permisos del mando](#permisos-del-mando-devuinput)). Para los FPS, [MangoHud](https://github.com/flightlessmango/MangoHud). Funciona también en distribuciones inmutables (Fedora Atomic, Bazzite, SteamOS…): no hace falta compilar nada ni instalar paquetes del sistema.
 
-El proyecto vive siempre en la misma carpeta, `~/proyectos/gamepad`, y los zips se llaman `gamepad-<versión>.zip` y se descomprimen en ella. Así la ruta del comando no cambia entre versiones.
+**Android:** 8.0 o superior para la app; para el cliente web, cualquier navegador moderno. El mando del dispositivo (o uno Bluetooth/USB) se reenvía al PC.
+
+## Compilación
+
+### Host
+
+No hay que compilar: es Python. `tools/install.sh` crea un entorno virtual en `.venv/` con `aiohttp` (la única dependencia).
+
+### App de Android
+
+Necesita JDK 17 o superior y el SDK de Android (plataforma 36, build-tools 35+). El proyecto usa el Gradle Wrapper, no hace falta instalar Gradle.
 
 ```
-cd ~/proyectos && unzip -o gamepad-0.3.0.zip
-cd gamepad && sh tools/install.sh
+cd android
+echo "sdk.dir=$HOME/Android/Sdk" > local.properties     # ruta de tu SDK
+./gradlew assembleRelease
+```
+
+Resultado: `android/app/build/outputs/apk/release/app-release.apk`.
+
+**Firma.** Sin más configuración, la APK de release se firma con la clave de depuración (se instala, pero una APK firmada con otra clave no podrá actualizarla). Para firmar con tu propia clave, que debes guardar fuera del repositorio:
+
+```
+cd android && mkdir -p keystore
+keytool -genkeypair -keystore keystore/gamepad.jks -alias gamepad -keyalg RSA -keysize 3072 -validity 36500
+cat > keystore/keystore.properties <<'EOF'
+storeFile=keystore/gamepad.jks
+storePassword=TU_CONTRASEÑA
+keyAlias=gamepad
+keyPassword=TU_CONTRASEÑA
+EOF
+```
+
+`android/keystore/` está en `.gitignore`. Usa siempre la misma clave: Android solo instala una actualización encima si está firmada con la clave original.
+
+Más detalles en [android/README.md](android/README.md).
+
+### Plugins
+
+Cada plugin se empaqueta aparte como `gamepad-plugin-<id>-<versión>.zip`:
+
+```
+sh tools/build-plugin.sh ffrs            # crea gamepad-plugin-ffrs-1.0.0.zip y lo valida
+```
+
+### Plugin de Decky (opcional)
+
+Necesita Node.js:
+
+```
+sh tools/build-decky.sh                  # crea gamepad-decky-<versión>.zip
+```
+
+## Instalación en el host
+
+Con tu usuario, **sin sudo**:
+
+```
+git clone <este repositorio> ~/gamepad          # o descomprime un zip en una carpeta fija
+cd ~/gamepad && sh tools/install.sh
 systemctl --user enable --now gamepad
-gamepad plugin install gamepad-plugin-ffrs-1.0.0.zip
+gamepad status
 ```
 
-Para actualizar: `unzip -o` del zip nuevo en `~/proyectos`, `sh tools/install.sh` y `systemctl --user restart gamepad`.
+`install.sh` crea `~/.local/bin/gamepad` (apunta a la carpeta del proyecto: no la muevas, o vuelve a ejecutarlo) y el servicio de usuario `gamepad`, y te dice si tu usuario ya puede crear el mando virtual. Se puede ejecutar las veces que haga falta.
 
-Solo necesita Python 3 y `aiohttp` (sin compilar nada: el mando virtual habla con `/dev/uinput` directamente). Funciona igual en sistemas inmutables como Bazzite.
+`gamepad status` muestra si el servicio está activo, la URL para Android y el **código de acceso** (4 letras, fijo; `gamepad code --new` lo cambia y cierra las sesiones abiertas).
 
-Crea `~/.local/bin/gamepad` y el servicio de usuario `gamepad`, y te dice si tu usuario ya puede crear el mando virtual.
+**Actualizar:** `git pull` (o descomprime el zip nuevo encima), `sh tools/install.sh` y `systemctl --user restart gamepad`.
 
-**Si vienes de `ps5gamepad` (hasta la v0.4.5):** `install.sh` detiene y quita el servicio antiguo, mueve los retratos a `~/.local/share/gamepad/portraits/` y deja `~/.local/bin/ps5gamepad` como alias del comando nuevo, para que el juego siga arrancando hasta que cambies la opción de Steam a `gamepad run mangohud %command%`. La sesión de Android se pide de nuevo una vez.
+### Steam
 
-Si vienes de la v0.3 (que corría con sudo), detén ese servidor y quita de `~/.config/MangoHud/MangoHud.conf` las líneas `output_folder`, `autostart_log`, `log_interval` y `log_duration`: el lanzador ahora las pone por ti.
+Para que el lanzador lea FPS y datos del juego, en las propiedades del juego → **Opciones de lanzamiento** (ruta absoluta; cambia `TU_USUARIO`):
+
+```
+/home/TU_USUARIO/.local/bin/gamepad run mangohud %command%
+```
+
+Sin esto, el mando y la telemetría del sistema funcionan igual; solo faltan FPS y datos del juego.
 
 ### Permisos del mando (`/dev/uinput`)
 
-El paquete de Steam suele instalar reglas udev que dan acceso a `/dev/uinput` al usuario con sesión iniciada. Compruébalo con `ls -l /dev/uinput` y `getfacl /dev/uinput`, o mira lo que dice `install.sh`. Si falta, una sola vez:
+El paquete de Steam suele instalar reglas udev que dan acceso a `/dev/uinput` al usuario con sesión iniciada; `install.sh` lo comprueba. Si falta, una sola vez:
 
 ```
 sudo groupadd -f uinput
@@ -46,16 +116,18 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 
 Cierra sesión y vuelve a entrar. Se usa un grupo propio porque el grupo `input` también permite leer teclado y ratón.
 
-### Firewall (Fedora, Bazzite y otros con firewalld)
+### Firewall
 
-Ubuntu no trae firewall activo; Fedora y Bazzite sí. Si Android dice "Address Unreachable", abre el puerto solo para tu red local (ajusta la zona, que ves con `sudo firewall-cmd --get-active-zones`, y el rango de tu red):
+Si el dispositivo Android no llega al PC ("Address Unreachable" o "Connection refused"), abre el puerto 8888 **solo para tu red local**. Con firewalld (Fedora y derivadas), ajustando la zona (`sudo firewall-cmd --get-active-zones`) y el rango de tu red:
 
 ```
 sudo firewall-cmd --permanent --zone=FedoraWorkstation --add-rich-rule='rule family="ipv4" source address="192.168.1.0/24" port port="8888" protocol="tcp" accept'
 sudo firewall-cmd --reload
 ```
 
-Si responde `RUNNING_BUT_FAILED`, firewalld no pudo cargar sus reglas y está en modo de emergencia. Mira el motivo con `journalctl -u firewalld -b | grep -i error`. En la PS5 con Bazzite (kernel 7.3.0) faltaba el módulo `nf_conntrack_netbios_ns`, que pide el servicio `samba-client` de la zona; se arregla con una copia de la zona sin ese servicio:
+Con ufw: `sudo ufw allow from 192.168.1.0/24 to any port 8888 proto tcp`.
+
+Si firewalld responde `RUNNING_BUT_FAILED`, no pudo cargar sus reglas y está en modo de emergencia: mira el motivo con `journalctl -u firewalld -b | grep -i error`. Un caso conocido: con kernels sin el módulo `nf_conntrack_netbios_ns`, el servicio `samba-client` de la zona impide cargarla; se arregla con una copia de la zona sin ese servicio:
 
 ```
 sudo cp /usr/lib/firewalld/zones/FedoraWorkstation.xml /etc/firewalld/zones/
@@ -63,56 +135,9 @@ sudo sed -i '/<service name="samba-client"\/>/d' /etc/firewalld/zones/FedoraWork
 sudo systemctl restart firewalld
 ```
 
-No desactives firewalld para salir del paso.
+No desactives el firewall para salir del paso.
 
-## Uso
-
-1. Servicio: `systemctl --user start gamepad` (y `enable` para que arranque al iniciar sesión).
-2. Código de acceso y URL: `gamepad status`. El código es fijo (se guarda en `~/.local/state/gamepad/code`, 0600); `gamepad code --new` lo cambia y cierra las sesiones abiertas (luego `systemctl --user restart gamepad`). Al arrancar, el servicio manda una notificación de escritorio con la URL y el código.
-3. Android: abre `http://IP-DEL-PC:8888` y escribe el código. La sesión dura 24 h.
-4. Steam, propiedades del juego, opciones de lanzamiento (ruta absoluta, cambia TU_USUARIO):
-   ```
-   /home/TU_USUARIO/.local/bin/gamepad run mangohud %command%
-   ```
-
-Si el juego no muestra datos, el registro del lanzador está en `$XDG_RUNTIME_DIR/gamepad/launcher.log` (normalmente `/run/user/1000/gamepad/launcher.log`).
-
-Para probar sin juego real: `gamepad run python3 tools/demo_game.py`.
-
-### Aviso en Big Picture / Game Mode (Decky Loader, opcional)
-
-Steam no deja que programas externos muestren avisos en Big Picture; con [Decky Loader](https://decky.xyz) sí. **Decky Loader corre como root** (en Bazzite: `ujust setup-decky`); el plugin de GamePad no pide root y corre con tu usuario: solo lee `~/.local/state/gamepad/code` y pregunta al servicio en `127.0.0.1` si responde.
-
-- Aviso "GamePad listo" con la URL y el código cuando el servicio responde (también al iniciar Steam) y "GamePad no responde" si se cae.
-- Panel en el menú de acceso rápido (botón `…`, icono de mando) con estado, URL y código.
-
-Instalar: copia `gamepad-decky-<versión>.zip` a la PS5, activa el modo desarrollador en los ajustes de Decky e instala el plugin desde el ZIP. Para compilarlo tú: `sh tools/build-decky.sh` (necesita Node.js).
-
-### App de Android (opcional, más ligera que Chrome)
-
-`gamepad-android-<versión>.apk`: cliente nativo con el mismo protocolo, sin navegador; el mando llega por eventos de Android en vez de consultarse en cada fotograma. Ver `android/README.md`.
-
-### En el cliente web (Chrome)
-
-- **Remapear:** si algún botón del mando físico no corresponde (el navegador lo marca como "mapeo no estándar"), pulsa *Remapear* y sigue los pasos: pulsa cada botón, gatillo o dirección que se pide. Lo que no exista se omite. El mapeo se guarda en ese navegador, por mando; *Volver al mapeo por defecto* lo borra. Mientras remapeas, el PC no recibe ninguna pulsación.
-- **Debug:** muestra u oculta el panel de diagnóstico del plugin (estado, origen de HP/MP, mapa, ejecutable, diagnóstico de batalla y de curvas de nivel). Se recuerda en ese navegador.
-- **Táctil:** mando en pantalla, por si no hay mando físico.
-- **Guide:** botón grande (tamaño pulgar) arriba de los FPS. Equivale al botón Guide del mando (abre el menú de Steam); se puede mantener pulsado.
-
-## FPS, frametimes y tamaño del log
-
-El lanzador añade a tu configuración de MangoHud (sin tocar tu archivo) las opciones de log, con una fila por frame. El log y la configuración generada van a `~/.cache/gamepad/` (privado, 0700). Tiene que estar dentro de tu carpeta personal: los juegos de Proton corren en el contenedor de Steam, que comparte tu carpeta personal pero no `/run/user/...`. Para que no crezca:
-
-- el servicio libera cada 4 MB la parte del archivo ya leída (el archivo conserva su tamaño aparente, pero deja de ocupar memoria);
-- el lanzador borra el log al cerrar el juego, y también los de más de un día.
-
-Si tu configuración de MangoHud es un archivo por juego (`wine-*.conf`), el lanzador usa el general (`MangoHud.conf`) como base. En ese caso, copia tus opciones al general.
-
-## Plugins
-
-Un plugin lee los datos de un juego concreto. Los ejecuta solo el lanzador, sobre los descendientes del juego que lanzó. Son código Python con acceso de lectura a la memoria del juego, con tu usuario: instala solo los que hayas revisado.
-
-**Se distribuyen aparte del hub**, como `gamepad-plugin-<id>-<versión>.zip`, y se instalan en `~/.local/share/gamepad/plugins/<id>/`. Actualizar el hub no los toca y actualizar un plugin no toca el hub. No hace falta reiniciar el servicio: se cargan cada vez que lanzas un juego.
+### Plugins de juegos
 
 ```
 gamepad plugin install gamepad-plugin-ffrs-1.0.0.zip    # instala o actualiza (pide confirmación)
@@ -120,9 +145,48 @@ gamepad plugin list                                     # incluidos e instalados
 gamepad plugin remove ffrs                              # desinstala
 ```
 
-Al instalar se valida el zip antes de escribir nada: una sola carpeta `<id>/`, sin rutas `..` ni enlaces simbólicos, tamaño acotado y API compatible.
+Se instalan en `~/.local/share/gamepad/plugins/<id>/` y se cargan cada vez que lanzas un juego; no hace falta reiniciar el servicio.
 
-### Formato (API 1)
+### Aviso en Big Picture / Game Mode (Decky Loader, opcional)
+
+Steam no deja que programas externos muestren avisos en Big Picture; con [Decky Loader](https://decky.xyz) sí. **Decky Loader corre como root**; el plugin de GamePad no pide root y corre con tu usuario: solo lee `~/.local/state/gamepad/code` y pregunta al servicio en `127.0.0.1` si responde. Muestra "GamePad listo" con la URL y el código al arrancar (o "no responde" si se cae) y un panel en el menú de acceso rápido.
+
+Instalar: activa el modo desarrollador en los ajustes de Decky e instala `gamepad-decky-<versión>.zip` desde el ZIP.
+
+## Instalación en Android
+
+### App (recomendada)
+
+1. Copia `app-release.apk` (o `gamepad-android-<versión>.apk`) al dispositivo y ábrelo; Android pedirá permitir instalar apps de esa fuente.
+2. Abre **GamePad**, escribe `IP-DEL-PC:8888` y el código de `gamepad status`. La sesión dura 24 h.
+
+El mando llega por eventos de Android (no se consulta en cada fotograma) y la pantalla solo se redibuja al llegar datos: calienta y gasta mucho menos que el navegador.
+
+### Navegador (sin instalar nada)
+
+Abre `http://IP-DEL-PC:8888` y escribe el código. Pulsa un botón del mando para que el navegador lo detecte. Si el navegador no ofrece el mando en `http://`, usa la app.
+
+Solo puede haber un cliente conectado a la vez.
+
+## Uso
+
+- **Guide:** botón grande arriba de los FPS; equivale al botón Guide del mando (abre el menú de Steam) y se puede mantener pulsado.
+- **Debug:** muestra u oculta el diagnóstico del plugin.
+- **Remapear** (web): si algún botón no corresponde ("mapeo no estándar"), pulsa *Remapear* y sigue los pasos; se guarda por mando en ese navegador. La app usa el mapeo estándar de Android.
+- **Táctil** (web): mando en pantalla, por si no hay mando físico.
+- Si no hay juego con plugin, la telemetría ocupa toda la pantalla.
+
+Si el juego no muestra datos, el registro del lanzador está en `$XDG_RUNTIME_DIR/gamepad/launcher.log` (normalmente `/run/user/1000/gamepad/launcher.log`). Para probar sin un juego: `gamepad run python3 tools/demo_game.py`.
+
+### FPS y MangoHud
+
+El lanzador añade a tu configuración de MangoHud (sin tocar tu archivo) las opciones de log, con una fila por frame. El log va a `~/.cache/gamepad/` (dentro de tu carpeta personal, que el contenedor de Steam comparte con los juegos de Proton). Para que no crezca, el servicio libera la parte ya leída cada 4 MB y el lanzador lo borra al cerrar el juego. Si usas configuración por juego (`wine-*.conf`), el lanzador toma como base la general (`MangoHud.conf`).
+
+## Plugins
+
+Un plugin lee los datos de un juego concreto. Lo ejecuta solo el lanzador, sobre los descendientes del juego que lanzó (Linux, con `kernel.yama.ptrace_scope=1`, solo deja leer la memoria de un proceso a su ancestro: por eso no hace falta root). Es código Python con acceso de lectura a la memoria del juego: instala solo los que hayas revisado.
+
+Formato (API 1):
 
 ```
 mi_juego/
@@ -131,110 +195,64 @@ mi_juego/
 ```
 
 - `id`: a-z, 0-9 y `_`; igual que el nombre de la carpeta y que `Plugin.id`.
-- `api`: versión de la API de plugins (`server/plugin_api.py`). Si el hub cambia la API de forma incompatible, los plugins de otra API no se cargan (en vez de fallar a medias).
+- `api`: versión de la API de plugins (`server/plugin_api.py`). Los plugins de otra API no se cargan.
 - Si un id está a la vez en `plugins/` del proyecto y en los instalados, gana el instalado.
-- Plantilla: `plugins/_template/`. Para empaquetar uno tuyo: `sh tools/build-plugin.sh <id>`.
+- Plantilla: `plugins/_template/`. Empaquetar: `sh tools/build-plugin.sh <id>`.
+- Al instalar se valida el zip: una sola carpeta `<id>/`, sin rutas `..` ni enlaces simbólicos, tamaño acotado y API compatible.
 - Si `read()` tarda más de 5 s, se avisa en Android y no se lanza otra lectura hasta que termine.
 
-Cada campo declara dónde se muestra en Android con `section`:
+Cada campo declara dónde se muestra con `section`: `party` (tarjetas por miembro, `slot` 1-4), `stats` (números grandes), `header` (junto al nombre del juego) o `info` (diagnóstico, solo con *Debug*). `kind`: `number`, `bar` (con `max_key`), `text` o `image`. `tone` (color): `hp`, `mp`, `limit`, `gold`, `xp` o `neutral`.
 
-- `party`: tarjetas por miembro (`slot` 1-4) con nombre, retrato, nivel, HP, MP y Limit;
-- `stats`: números grandes (Gil, EXP);
-- `header`: texto junto al nombre del juego;
-- `info`: texto pequeño de diagnóstico (solo se ve con *Debug* activado).
+Las imágenes (retratos) las pone el usuario en `~/.local/share/gamepad/portraits/<id>/`; el proyecto no incluye arte de ningún juego.
 
-`kind`: `number`, `bar` (con `max_key`), `text` o `image`. `tone` (color): `hp`, `mp`, `limit`, `gold`, `xp` o `neutral`.
+Plugins incluidos en el repositorio:
 
-Si no hay juego con plugin, el panel derecho desaparece y la telemetría ocupa toda la pantalla.
-
-### Final Fantasy Resonance (plugin `ffrs`, se distribuye aparte)
-
-Solo para la build 24250053 de Steam: comprueba la cabecera PE del ejecutable (timestamp `0x6A586B2F`, tamaño `503013376`) y, si no coincide, no lee nada. Las rutas de memoria vienen de la tabla `FFRS_Steam_24250053_Starter.CT` (repositorio `shawnjohnjr/ff-RESONANCE-ct`); cada una está documentada al principio del plugin.
-
-| Dato | Dónde se muestra | Origen |
-|---|---|---|
-| Gil | estadísticas | partida activa, ruta de la tabla |
-| Nombre de los 4 miembros | tarjetas | equipo de la partida; en batalla, orden de la batalla |
-| Nivel y EXP para el siguiente | línea bajo el nombre | EXP de la partida + curvas de nivel del juego (cálculo propio: compáralo con el menú) |
-| HP y MP | barras de cada tarjeta | actual: parámetro de la unidad (`+0x10C`/`+0x110`); máximo: ViewModel de la interfaz del juego (ver abajo) |
-| Retrato | círculo junto al nombre | imágenes tuyas (ver "Retratos"); si no hay, la inicial |
-
-**HP y MP.** La tabla no los lee y el juego no los publica con nombre en la reflexión. El **actual** está en el parámetro de cada unidad, en `+0x10C` (HP; la tabla lo usa como "puede actuar si > 0") y `+0x110` (MP), tanto en batalla (`CPP_BtlUnitParameter`) como fuera (`CPP_UnitParameter`). El **máximo** sale del ViewModel que usa la interfaz del juego (`CPP_VM_UnitParam` → `HitPointVM`/`MagicPointVM` → `MaxPoint`), localizado por nombre con la reflexión. Se comprobó en el juego real que ambos coinciden (`CurrentPoint` = `+0x10C`). "Origen HP/MP" dice de dónde sale cada dato; "Diag. HP/MP" muestra los valores leídos.
-
-**Fuera de batalla.** La tabla obtiene el parámetro vivo llamando a una función del juego, cosa que un lector no puede hacer. El plugin busca los objetos `CPP_UnitParameter` y `CPP_VM_UnitParam` y usa uno solo si es el único con el ID de ese personaje; si hay varios o desaparece, no muestra nada hasta reescanear (cada 15 s como mucho).
-
-### Retratos
-
-No se incluye arte del juego: pones tus propias imágenes en
-
-```
-~/.local/share/gamepad/portraits/ffrs/
-```
-
-Está fuera de la carpeta del proyecto, así no se pierden al descomprimir otra versión. Formatos: `png`, `jpg`, `jpeg`, `webp` (SVG no). Se aceptan dos nombres por personaje: el ID o el nombre en minúsculas.
-
-| ID | Personaje | Archivo |
-|---|---|---|
-| 1001 | Rain | `1001.png` o `rain.png` |
-| 1002 | Lasswell | `1002.png` o `lasswell.png` |
-| 1003 | Fina | `1003.png` o `fina.png` |
-| 1004 | Lid | `1004.png` o `lid.png` |
-| 1005 | Nichol | `1005.png` o `nichol.png` |
-| 1006 | Archwitch Fina | `1006.png`, `archwitch_fina.png` o `dark_fina.png` |
-| 1007 | Jake | `1007.png` o `jake.png` |
-| 1008 | Sakura | `1008.png` o `sakura.png` |
-
-Copia los archivos (no enlaces simbólicos que apunten fuera de la carpeta: se rechazan). Basta con una imagen cuadrada con la cara centrada; se recorta en círculo. Las imágenes nuevas aparecen en unos 10 s, sin reiniciar nada.
-
-El escaneo de objetos para encontrar la partida tarda unos segundos; se hace una vez al cargar y, mientras estés en el título, se reintenta cada 10 s.
+- [`plugins/ffrs`](plugins/ffrs/README.md): FINAL FANTASY RESONANCE (Steam).
+- `plugins/demo_game.py`: para `tools/demo_game.py`.
 
 No uses plugins en juegos online con anti-cheat.
 
-## Tests
+## Seguridad
+
+- Ningún componente necesita root; el servicio corre con `NoNewPrivileges`.
+- El servicio que da la cara a la red no puede leer memoria de juegos; el lanzador, que sí puede, no abre puertos. Se comunican por un socket Unix privado (`$XDG_RUNTIME_DIR/gamepad/hub.sock`, 0600).
+- **Solo red local de confianza**, sin cifrado. No abras el puerto en el router ni en túneles.
+- Código de 4 letras con bloqueo de 60 s tras 5 fallos; cookie de 24 h `HttpOnly` y `SameSite=Strict`; el WebSocket rechaza otros orígenes; un solo cliente a la vez.
+- Las imágenes se sirven solo con sesión, con nombres validados, sin SVG y sin salir de su carpeta.
+- Para cerrar todas las sesiones: `gamepad code --new` y `systemctl --user restart gamepad`.
+
+## Desarrollo
 
 ```
-python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
 .venv/bin/pytest -q
 ```
 
-`tests/fake_ue.py` monta en memoria la estructura de UE5 que describe la tabla CT y ejecuta el plugin real contra ella.
+`tests/fake_ue.py` monta en memoria una estructura de Unreal Engine 5 y ejecuta el plugin real contra ella. La red de la app Android se prueba sin Android con `android/jvmtest/` (ver [android/README.md](android/README.md)).
 
-## Seguridad
-
-- Los retratos se sirven solo con sesión, con nombres validados, sin SVG y sin salir de su carpeta.
-
-- Ningún componente necesita root; el servicio corre con `NoNewPrivileges`.
-- El servicio web no puede leer memoria de juegos; el lector no abre puertos.
-- Solo red local de confianza, sin cifrado. No abras el puerto en el router ni en túneles.
-- Código de 4 letras con bloqueo de 60 s tras 5 fallos; cookie de 24 h `HttpOnly` y `SameSite=Strict`; el WebSocket rechaza otros orígenes; un solo cliente a la vez.
-- Para cerrar todas las sesiones: borra `~/.local/state/gamepad/sessions.json` y reinicia el servicio.
-
-## Protocolo
-
-WebSocket `/ws` (JSON). Cliente → servidor: `in` (estado del mando, al cambiar y cada 100 ms) y `ping`. Servidor → cliente: `hello`, `tel` (`cpu`, `gpu`, `mem`, `fps`, `ft`, `ftNew[]`, `mh`), `game` (metadatos y campos del plugin), `gv` (valores o `err`), `pong`, `err`. Si no llega `in` en 500 ms, se sueltan todos los controles.
-
-Lanzador → servicio: líneas JSON por el socket Unix, solo de tipo `game` y `gv`.
-
-## Estructura
+Protocolo: WebSocket `/ws` (JSON). Cliente → servidor: `in` (estado del mando, al cambiar y como latido) y `ping`. Servidor → cliente: `hello`, `tel` (`cpu`, `gpu`, `mem`, `fps`, `ft`, `ftNew[]`, `mh`), `game` (metadatos y campos del plugin), `gv` (valores o `err`), `pong`, `err`. Si no llega `in` en 500 ms, se sueltan todos los controles. Lanzador → servicio: líneas JSON por el socket Unix, solo `game` y `gv`.
 
 ```
 server/
-  cli.py        gamepad serve | run
+  cli.py        gamepad serve | run | status | code | plugin
   main.py       servicio: HTTP, WebSocket, watchdog, telemetría, socket puente
   launcher.py   lanzador: juego hijo, MangoHud, plugins, puente
   auth.py       código de acceso y sesiones
-  pad.py        mando uinput (ioctl directos, sin evdev)
+  status.py     gamepad status/code y notificación al arrancar
+  pad.py        mando uinput (ioctl directos, sin dependencias)
   telemetry.py  /proc, /sys y log de MangoHud
   memory.py     lectura de memoria y descendientes
-  ue.py         lector de Unreal Engine 5 (nombres, objetos, GWorld)
+  ue.py         lector de Unreal Engine 5 (nombres, objetos, reflexión)
   plugins.py    carga y ciclo de vida de plugins
-  paths.py      rutas por usuario
-  portraits.py  retratos del usuario: búsqueda y validación de rutas
-  plugin_api.py API estable para plugins (lo único que importan)
+  plugin_api.py API estable para plugins
   plugin_pkg.py gamepad plugin list/install/remove
-plugins/        demo_game.py, _template/ (y ffrs/ en el repositorio; se empaqueta aparte)
-tests/          arnés de memoria UE5 sintética y tests (pytest)
-tools/          install.sh, gamepad.service, demo_game.py
-web/index.html  cliente web (Chrome)
-android/        APK nativa (Java, sin dependencias)
+  portraits.py  imágenes del usuario: búsqueda y validación de rutas
+  paths.py      rutas por usuario
+plugins/        demo_game.py, _template/, ffrs/
+web/index.html  cliente web
+android/        app nativa (Java, sin dependencias)
+decky/          plugin de Decky Loader
+tests/          pytest
+tools/          install.sh, gamepad.service, build-plugin.sh, build-decky.sh, demo_game.py
+docs/           notas de desarrollo
 ```

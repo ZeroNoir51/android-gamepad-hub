@@ -88,7 +88,7 @@ public final class MainActivity extends Activity {
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = getSharedPreferences("gamepad", MODE_PRIVATE);
-        host = prefs.getString("host", "192.168.1.50");
+        host = prefs.getString("host", "");
         port = prefs.getInt("port", 8888);
         cookie = prefs.getString("cookie", null);
         debug = prefs.getBoolean("debug", false);
@@ -450,7 +450,8 @@ public final class MainActivity extends Activity {
     private void showLogin(String msg) {
         disconnect();
         setContentView(loginView);
-        hostEdit.setText(host + ":" + port);
+        hostEdit.setText(host.isEmpty() ? "" : host + ":" + port);
+        hostEdit.setHint("192.168.1.50:8888");
         loginError.setText(msg == null ? "" : msg);
         codeEdit.requestFocus();
     }

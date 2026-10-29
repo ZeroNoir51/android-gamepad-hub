@@ -14,14 +14,21 @@ android {
         versionName '0.1'
     }
 
+    // Firma de la versión release: keystore/keystore.properties (NO se sube al repositorio).
+    // Sin ese archivo se firma con la clave de depuración (se instala, pero no actualiza
+    // una APK firmada con otra clave). Ver android/README.md.
+    def ksProps = new Properties()
+    def ksFile = rootProject.file('keystore/keystore.properties')
+    if (ksFile.exists()) ksFile.withInputStream { ksProps.load(it) }
+
     signingConfigs {
-        // Clave propia guardada en el proyecto: así una APK nueva se instala encima de la
-        // anterior aunque se compile en otra máquina (con la clave de depuración no).
-        release {
-            storeFile file('../keystore/gamepad.jks')
-            storePassword 'CONTRASEÑA-RETIRADA'
-            keyAlias 'gamepad'
-            keyPassword 'CONTRASEÑA-RETIRADA'
+        if (ksFile.exists()) {
+            release {
+                storeFile rootProject.file(ksProps['storeFile'])
+                storePassword ksProps['storePassword']
+                keyAlias ksProps['keyAlias']
+                keyPassword ksProps['keyPassword']
+            }
         }
     }
 
@@ -30,7 +37,7 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
-            signingConfig signingConfigs.release
+            signingConfig ksFile.exists() ? signingConfigs.release : signingConfigs.debug
         }
     }
 
