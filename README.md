@@ -1,4 +1,4 @@
-# GamePad Hub 0.2
+# GamePad Hub 0.2.1
 
 Android (navegador hoy, APK después) → Wi-Fi local → PC Linux: mando virtual, telemetría (FPS, frametimes, CPU/GPU, RAM, latencia) y datos del juego leídos de memoria. **Nada se ejecuta como root.**
 
@@ -16,7 +16,7 @@ Linux (con `kernel.yama.ptrace_scope=1`, el valor de Ubuntu) solo deja leer la m
 El proyecto vive siempre en la misma carpeta, `~/proyectos/gamepad`, y los zips se llaman `gamepad-<versión>.zip` y se descomprimen en ella. Así la ruta del comando no cambia entre versiones.
 
 ```
-cd ~/proyectos && unzip -o gamepad-0.2.zip
+cd ~/proyectos && unzip -o gamepad-0.2.1.zip
 cd gamepad && sh tools/install.sh
 systemctl --user enable --now gamepad
 ```

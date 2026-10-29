@@ -85,6 +85,7 @@ class PluginManager:
         self._last_error_sent = 0.0
         self._failed = set()   # (plugin_id, pid) que fallaron de forma definitiva: no reintentar
         self._retrying = {}    # (plugin_id, pid) -> próximo log; el juego aún arranca
+        self._logged_errors = set()
 
     @property
     def period(self):
@@ -157,7 +158,11 @@ class PluginManager:
             if now - self._last_error_sent < self.ERROR_EVERY:
                 return []
             self._last_error_sent = now
-            if not isinstance(ex, MemoryReadError):
+            # Cada error distinto se escribe una vez con su traza: dice en qué lectura falló
+            where = traceback.extract_tb(ex.__traceback__)[-3:]
+            key = (type(ex).__name__, str(ex), tuple((f.name, f.lineno) for f in where))
+            if key not in self._logged_errors:
+                self._logged_errors.add(key)
                 print(f'[plugins] {plugin.id}: {traceback.format_exc()}', flush=True)
             return [{'t': 'gv', 'err': str(ex)}]
 

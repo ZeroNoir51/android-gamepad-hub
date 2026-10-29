@@ -198,7 +198,7 @@ def test_curvas_con_varias_tablas_del_mismo_tipo(attach):
     g = build_ffrs(party=(1001, 1002), enemy_table=True)
     v = attach(g).read(g.mem)
     assert v['p1_lv'] == 'Nv 5 · faltan 600 EXP'
-    assert v['dbg_curves'] == '8/8 personajes'
+    assert v['dbg_curves'] == '8/8 personajes; tablas UNIT_PARAMETER 2 (47 IDs)'
 
 
 def test_curvas_se_reintentan(attach):
@@ -207,7 +207,7 @@ def test_curvas_se_reintentan(attach):
     plugin = attach(g)
     v = plugin.read(g.mem)
     assert v.get('p1_lv') is None
-    assert v['dbg_curves'].startswith('0/8 personajes; falta 1001: curva 10001 sin lista')
+    assert v['dbg_curves'].startswith('0/8 personajes; tablas UNIT_PARAMETER 1 (8 IDs); falta 1001: curva 10001 sin lista')
     add_curves(g, {10001: level_table(g)})            # la tabla aparece más tarde
     assert plugin.read(g.mem).get('p1_lv') is None    # todavía dentro del límite
     plugin.next_curve_try = 0
@@ -230,3 +230,20 @@ def test_diagnostico_de_batalla(attach):
     g = build_ffrs(party=(1001,), battle=[(1001, STATS[1001])])
     v = attach(g).read(g.mem)
     assert v['dbg_battle'] == '1 unidades, 1 CPP_BtlUnit, 1 con parámetros, 1 aliados; IDs [1001]'
+
+
+def test_diagnostico_gestor_de_unidades_nulo(attach, capsys):
+    g = build_ffrs(party=(1001,), battle=[(1001, STATS[1001])])
+    bm = next(o for o in g.objects if g.mem.u32(o + 0x18) == g.fname_index('CPP_BtlManager_0'))
+    g.mem.put('u64', bm + 0x48, 0)
+    v = attach(g).read(g.mem)
+    assert v['dbg_battle'] == 'CPP_BtlManager +0x48 = nulo, no es CPP_BtlUnitManager'
+    assert 'propiedades de CPP_BtlManager (gestor de batalla)' in capsys.readouterr().out
+
+
+def test_censo_en_el_log(attach, capsys):
+    g = build_ffrs(party=(1001,), field=[(1001, STATS[1001])])
+    attach(g).read(g.mem)
+    out = capsys.readouterr().out
+    assert '       1  CPP_UnitParameter' in out
+    assert '       1  UNIT_LEVEL_PARAMETER_LIST' in out and '       8  UNIT_LEVEL_PARAMETER' in out

@@ -30,6 +30,7 @@ Retratos: imágenes del propio usuario en ~/.local/share/gamepad/portraits/ffrs/
 
 La EXP para el siguiente nivel se deriva de las curvas; compárala con el menú.
 """
+import collections
 import re
 import time
 
@@ -118,6 +119,8 @@ class Plugin(GamePlugin):
         self.next_curve_try = 0.0
         self.battle_diag = ''
         self.logged_subsystems = False
+        self.dumped = set()          # clases cuya reflexión ya se escribió en launcher.log
+        self.census_done = False
         self.next_scan = 0.0
         self.hp_offsets = {}         # {clase: ({'hp': (offset, tipo), ...}, descripción)}
         self.field_params = {}       # {id de personaje: CPP_UnitParameter} fuera de batalla
@@ -136,10 +139,57 @@ class Plugin(GamePlugin):
               f'{len(managers)} gestor(es) de partida', flush=True)
         if len(managers) != 1:
             return None
+        if not self.census_done:
+            self.census_done = True
+            self._census(found['DataTable'])
         self._set_field_params(found['CPP_UnitParameter'])
         self.next_param_scan = time.monotonic() + PARAM_RESCAN_EVERY
         self._try_curves(found['DataTable'])
         return managers[0]
+
+    # --- diagnóstico para launcher.log (una vez por partida) ---
+    CENSUS_KEYS = ('Param', 'Btl', 'Unit', 'Party', 'Chara', 'Status')
+
+    def _census(self, tables):
+        """Qué clases y qué tablas hay de verdad: sirve para corregir rutas sin adivinar."""
+        t0 = time.monotonic()
+        counts = collections.Counter(name for _, name in self.ue.objects()
+                                     if any(k in name for k in self.CENSUS_KEYS))
+        print(f'[ffrs] censo de clases ({time.monotonic() - t0:.1f} s), las que contienen '
+              f'{"/".join(self.CENSUS_KEYS)}:', flush=True)
+        for name, n in sorted(counts.items()):
+            print(f'  {n:6d}  {name}', flush=True)
+        structs = collections.Counter()
+        for t in tables:
+            try:
+                structs[self.ue.object_name(self.ue.mem.ptr(t + 0x28))] += 1
+            except MemoryReadError:
+                structs['?'] += 1
+        print(f'[ffrs] DataTable por RowStruct ({len(tables)} tablas):', flush=True)
+        for name, n in sorted(structs.items()):
+            print(f'  {n:6d}  {name}', flush=True)
+
+    def _dump_class(self, obj, why):
+        """Escribe una vez en el log las propiedades (nombre, tipo, offset) de la clase de obj."""
+        try:
+            cls = self.ue.mem.ptr(obj + OBJ_CLASS)
+            if cls in self.dumped:
+                return
+            self.dumped.add(cls)
+            props = self.ue.properties(cls)
+            print(f'[ffrs] propiedades de {self.ue.object_name(cls)} ({why}):', flush=True)
+            for name, ftype, offset, owner in props:
+                print(f'  {name:40s} {ftype:20s} 0x{offset:X}  {owner}', flush=True)
+        except MemoryReadError as ex:
+            print(f'[ffrs] no se pudo volcar la clase ({why}): {ex}', flush=True)
+
+    def _describe_ptr(self, ptr):
+        if not ptr:
+            return 'nulo'
+        try:
+            return f'0x{ptr:X} ({self.ue.class_name(ptr)}{"" if self.ue.live(ptr) else ", no vivo"})'
+        except MemoryReadError:
+            return f'0x{ptr:X} (ilegible)'
 
     def _try_curves(self, tables=None):
         """Carga las curvas; si faltan, se reintenta más tarde (las tablas pueden cargarse después)."""
@@ -182,6 +232,9 @@ class Plugin(GamePlugin):
             except MemoryReadError:
                 continue
         definitions = self._merged_rows(by_struct, 'UNIT_PARAMETER', 8, lambda r: mem.i32(r + 0x3C))
+        if definitions:
+            sample = sorted(definitions)[:12]
+            print(f'[ffrs] UNIT_PARAMETER: IDs de ejemplo (+8) {sample}', flush=True)
         lists = self._merged_rows(by_struct, 'UNIT_LEVEL_PARAMETER_LIST', 8, lambda r: mem.ptr(r + 0x10))
         curves, missing = {}, []
         for char_id in NAMES:
@@ -200,7 +253,8 @@ class Plugin(GamePlugin):
                 missing.append(f'{char_id}: {step}')
                 print(f'[ffrs] sin curva de nivel para {NAMES[char_id]} ({char_id}): {step}', flush=True)
         print(f'[ffrs] curvas de nivel cargadas: {sorted(curves)}', flush=True)
-        self.curves_diag = (f'{len(curves)}/{len(NAMES)} personajes'
+        self.curves_diag = (f'{len(curves)}/{len(NAMES)} personajes; tablas UNIT_PARAMETER '
+                            f'{len(by_struct.get("UNIT_PARAMETER", ()))} ({len(definitions)} IDs)'
                             + (f'; falta {missing[0]}' + (f' (+{len(missing) - 1})' if len(missing) > 1 else '')
                                if missing else ''))
         return curves
@@ -245,10 +299,12 @@ class Plugin(GamePlugin):
         if manager is None:
             self.battle_diag = f'sin CPP_BtlManager entre {len(entries)} subsistemas'
             return None
+        self._dump_class(manager, 'gestor de batalla')
         units = mem.ptr(manager + BTL_UNIT_MANAGER)
         if not ue.live(units) or not ue.isa(units, 'CPP_BtlUnitManager'):
-            self.battle_diag = 'CPP_BtlManager sin CPP_BtlUnitManager válido (+0x48)'
+            self.battle_diag = f'CPP_BtlManager +0x48 = {self._describe_ptr(units)}, no es CPP_BtlUnitManager'
             return None
+        self._dump_class(units, 'gestor de unidades')
         data, n = self._array(units + UNITS_ARRAY, 128)
         members, actors, params, ids = [], 0, 0, []
         for i in range(n):
@@ -256,6 +312,7 @@ class Plugin(GamePlugin):
             if not ue.live(actor) or not ue.isa(actor, 'CPP_BtlUnit'):
                 continue
             actors += 1
+            self._dump_class(actor, 'unidad de batalla')
             param = mem.ptr(actor + UNIT_PARAMETER)
             if not ue.live(param) or not ue.isa(param, 'CPP_BtlUnitParameter'):
                 continue

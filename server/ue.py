@@ -103,10 +103,8 @@ class UEReader:
             cls = self.mem.ptr(cls + STRUCT_SUPER)
         return False
 
-    def scan(self, class_names):
-        """Una pasada por todos los objetos: {clase: [objetos vivos, sin CDO]}."""
-        wanted = set(class_names)
-        found = {c: [] for c in wanted}
+    def objects(self):
+        """(objeto, nombre de clase) de todos los objetos vivos, sin CDO, en una pasada."""
         count = self.object_count()
         chunks = self.mem.ptr(self.gobjects)
         for c in range((count + CHUNK - 1) // CHUNK):
@@ -126,10 +124,16 @@ class UEReader:
                     cls = int.from_bytes(head[8:16], 'little')
                     if cls not in self._class_names:
                         self._class_names[cls] = self.object_name(cls)
-                    if self._class_names[cls] in wanted:
-                        found[self._class_names[cls]].append(obj)
+                    yield obj, self._class_names[cls]
                 except MemoryReadError:
                     continue
+
+    def scan(self, class_names):
+        """Una pasada por todos los objetos: {clase: [objetos vivos, sin CDO]}."""
+        found = {c: [] for c in set(class_names)}
+        for obj, name in self.objects():
+            if name in found:
+                found[name].append(obj)
         return found
 
     # --- mundo ---
