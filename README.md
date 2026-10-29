@@ -263,5 +263,4 @@ android/        app nativa (Java, sin dependencias)
 decky/          plugin de Decky Loader
 tests/          pytest
 tools/          install.sh, gamepad.service, build-plugin.sh, build-decky.sh, demo_game.py
-docs/           notas de desarrollo
 ```
