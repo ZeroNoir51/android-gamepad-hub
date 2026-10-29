@@ -48,3 +48,21 @@ def test_finder_cachea_y_recoge_nuevas(tmp_path, monkeypatch):
     monkeypatch.setattr(portraits, 'RECHECK_EVERY', 0)
     finder._cache.clear()
     assert finder.url(1001, ('rain',)) == '/portraits/ffrs/rain.jpg'
+
+
+def test_extension_en_mayusculas(root):
+    (root / 'ffrs' / 'FONDO.WEBP').write_bytes(b'x')
+    assert portraits.resolve('ffrs', 'FONDO.WEBP', root) is not None
+    assert portraits.content_type(root / 'ffrs' / 'FONDO.WEBP') == 'image/webp'
+
+
+def test_fondos_listado_y_validacion(tmp_path):
+    (tmp_path / 'ffrs').mkdir()
+    for name in ('b_noche.jpg', 'a_dia.webp', 'malo.svg', 'con espacio.png'):
+        (tmp_path / 'ffrs' / name).write_bytes(b'x')
+    (tmp_path / 'ffrs' / 'enorme.png').write_bytes(b'x' * (portraits.MAX_BYTES + 1))
+    assert portraits.listing('ffrs', 'backgrounds', tmp_path) == [
+        '/backgrounds/ffrs/a_dia.webp', '/backgrounds/ffrs/b_noche.jpg']
+    assert portraits.listing('../x', 'backgrounds', tmp_path) == []
+    assert portraits.listing('ffrs', 'otra_cosa', tmp_path) == []
+    assert portraits.resolve('ffrs', 'a_dia.webp', tmp_path, kind='otra_cosa') is None

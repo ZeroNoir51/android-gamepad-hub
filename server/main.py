@@ -93,16 +93,24 @@ def main(argv=None):
     async def index(request):
         return web.FileResponse(ROOT / 'web' / 'index.html', headers={'Cache-Control': 'no-store'})
 
-    async def portrait(request):
+    def media(kind):
+        async def handler(request):
+            if not authorized(request):
+                raise web.HTTPForbidden(text='Sin sesión')
+            path = portraits.resolve(request.match_info['plugin'], request.match_info['name'], kind=kind)
+            if path is None:
+                raise web.HTTPNotFound()
+            return web.FileResponse(path, headers={
+                'Content-Type': portraits.content_type(path),
+                'X-Content-Type-Options': 'nosniff',
+                'Cache-Control': 'private, max-age=3600'})
+        return handler
+
+    async def api_media(request):
         if not authorized(request):
             raise web.HTTPForbidden(text='Sin sesión')
-        path = portraits.resolve(request.match_info['plugin'], request.match_info['name'])
-        if path is None:
-            raise web.HTTPNotFound()
-        return web.FileResponse(path, headers={
-            'Content-Type': portraits.content_type(path),
-            'X-Content-Type-Options': 'nosniff',
-            'Cache-Control': 'private, max-age=3600'})
+        return web.json_response({'backgrounds': portraits.listing(request.match_info['plugin'], 'backgrounds')},
+                                 headers={'Cache-Control': 'no-store'})
 
     async def api_session(request):
         return web.json_response({'ok': authorized(request)})
@@ -264,7 +272,9 @@ def main(argv=None):
     app.router.add_post('/api/login', api_login)
     app.router.add_post('/api/logout', api_logout)
     app.router.add_get('/ws', ws_handler)
-    app.router.add_get('/portraits/{plugin}/{name}', portrait)
+    app.router.add_get('/portraits/{plugin}/{name}', media('portraits'))
+    app.router.add_get('/backgrounds/{plugin}/{name}', media('backgrounds'))
+    app.router.add_get('/api/media/{plugin}', api_media)
     app.cleanup_ctx.append(lifetime)
 
     print(f'GamePad Hub {VERSION} · mando: {pad.name}', flush=True)

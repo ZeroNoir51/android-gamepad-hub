@@ -52,6 +52,12 @@ def portraits_dir():
     return path
 
 
+def backgrounds_dir():
+    path = data_dir() / 'backgrounds'
+    path.mkdir(mode=0o700, exist_ok=True)
+    return path
+
+
 def code_file():
     return state_dir() / 'code'
 
