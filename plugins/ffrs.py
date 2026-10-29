@@ -52,6 +52,10 @@ WORLD_SUBSYSTEMS = 0x930
 BTL_UNIT_MANAGER, UNITS_ARRAY, UNIT_PARAMETER, PARAM_CHAR_ID = 0x48, 0x28, 0x838, 0xD0
 KNOWN_BATTLE_OFFSETS = {0xD0, 0x118}      # para validar la reflexión de CPP_BtlUnitParameter
 KNOWN_BASE_OFFSETS = {0xD0}               # CPP_UnitParameter: el Limit solo existe en batalla
+# En el juego real HP/MP NO son UPROPERTY (CPP_UnitParameter solo refleja 4 campos). Candidatos
+# por posición, a verificar con el menú: +0x10C lo usa la tabla CT como "puede actuar si > 0".
+RAW_HP_CANDIDATE, RAW_MP_CANDIDATE = 0x10C, 0x110
+VIEWMODEL_CLASSES = ('CPP_VM_UnitParam', 'CPP_VM_UnitParamPoint', 'VM_UnitParamPoint_C')
 
 NAMES = {1001: 'Rain', 1002: 'Lasswell', 1003: 'Fina', 1004: 'Lid',
          1005: 'Nichol', 1006: 'Archwitch Fina', 1007: 'Jake', 1008: 'Sakura'}
@@ -105,6 +109,7 @@ class Plugin(GamePlugin):
         Field('build', 'Ejecutable', kind='text', section='info'),
         Field('dbg_battle', 'Diag. batalla', kind='text', section='info'),
         Field('dbg_curves', 'Diag. curvas', kind='text', section='info'),
+        Field('dbg_hpmp', 'Candidatos HP/MP', kind='text', section='info'),
     ]
 
     # --- enganche ---
@@ -411,6 +416,38 @@ class Plugin(GamePlugin):
             self.hp_source = f'error leyendo HP/MP: {ex}'
             return {}
 
+    def _dump_viewmodels(self):
+        """ViewModels de la interfaz (CPP_VM_UnitParam*): suelen tener actual y máximo con nombre."""
+        ue, mem = self.ue, self.ue.mem
+        readers = dict(NUMERIC, ByteProperty='u8', BoolProperty='u8')
+        found = ue.scan(VIEWMODEL_CLASSES)
+        for cls_name in VIEWMODEL_CLASSES:
+            objs = found[cls_name]
+            print(f'[ffrs] viewmodel {cls_name}: {len(objs)} objetos', flush=True)
+            if not objs:
+                continue
+            self._dump_class(objs[0], 'viewmodel')
+            try:
+                props = ue.properties(mem.ptr(objs[0] + OBJ_CLASS))
+            except MemoryReadError:
+                continue
+            for obj in objs[:16]:
+                parts = []
+                for name, ftype, off, _ in props:
+                    try:
+                        if ftype in readers:
+                            parts.append(f'{name}={mem.value(readers[ftype], obj + off)}')
+                        elif ftype == 'ObjectProperty':
+                            ptr = mem.ptr(obj + off)
+                            parts.append(f'{name}->{ue.object_name(ptr) if ptr else "nulo"}')
+                    except MemoryReadError:
+                        parts.append(f'{name}=?')
+                try:
+                    outer = ue.object_name(mem.ptr(obj + OBJ_OUTER))
+                except MemoryReadError:
+                    outer = '?'
+                print(f'  {ue.object_name(obj)} (en {outer}): {", ".join(parts) or "sin campos numéricos"}', flush=True)
+
     def _dump_values(self, param):
         """Una vez por personaje: los int32 del objeto, para buscar el HP/MP del menú a mano."""
         try:
@@ -420,6 +457,9 @@ class Plugin(GamePlugin):
                 return
             self.dumped.add(key)
             raw = self.ue.mem.read(param, 0x400)
+            if 'viewmodels' not in self.dumped:
+                self.dumped.add('viewmodels')
+                self._dump_viewmodels()
         except MemoryReadError:
             return
         values = struct.unpack('<256i', raw)
@@ -472,6 +512,16 @@ class Plugin(GamePlugin):
             self.hp_source = 'sin datos de HP/MP' + ('' if members else ' fuera de batalla')
 
         no_exp = [cid for cid, _ in roster[:4] if cid not in exp]
+        raw = []
+        for char_id, param in roster[:4]:
+            if param is not None:
+                try:
+                    raw.append(f'{NAMES.get(char_id, char_id)} {mem.i32(param + RAW_HP_CANDIDATE)}'
+                               f'/{mem.i32(param + RAW_MP_CANDIDATE)}')
+                except MemoryReadError:
+                    raw.append(f'{NAMES.get(char_id, char_id)} ?')
+        values['dbg_hpmp'] = (f'+0x{RAW_HP_CANDIDATE:X}/+0x{RAW_MP_CANDIDATE:X}: ' + ' · '.join(raw)
+                              if raw else 'sin objetos de parámetros todavía')
         for slot, (char_id, param) in enumerate(roster[:4], 1):
             values[f'p{slot}_name'] = NAMES.get(char_id, f'ID {char_id}')
             values[f'p{slot}_img'] = self.portraits.url(char_id, PORTRAIT_NAMES.get(char_id, ()))

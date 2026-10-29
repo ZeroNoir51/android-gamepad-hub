@@ -264,3 +264,21 @@ def test_censo_en_el_log(attach, capsys):
     out = capsys.readouterr().out
     assert '       1  CPP_UnitParameter' in out
     assert '       1  UNIT_LEVEL_PARAMETER_LIST' in out and '       8  UNIT_LEVEL_PARAMETER' in out
+
+
+def test_candidatos_hp_mp_y_viewmodels(attach, capsys):
+    from fake_ue import unit_parameter
+    g = build_ffrs(party=(1001, 1002), field=[(1001, {}), (1002, {})], props=[])
+    rain, lass = g.field_params
+    g.mem.put('i32', rain + 0x10C, 270); g.mem.put('i32', rain + 0x110, 35)
+    g.mem.put('i32', lass + 0x10C, 240); g.mem.put('i32', lass + 0x110, 40)
+    g.cls('CPP_VM_UnitParamPoint', 'Object')
+    g.props('CPP_VM_UnitParamPoint', [('CurrentValue', 'IntProperty', 0x30), ('MaxValue', 'IntProperty', 0x34)])
+    vm = g.obj('VM_HP_0', 'CPP_VM_UnitParamPoint', outer=rain)
+    g.mem.put('i32', vm + 0x30, 270); g.mem.put('i32', vm + 0x34, 300)
+    v = attach(g).read(g.mem)
+    assert v['dbg_hpmp'] == '+0x10C/+0x110: Rain 270/35 · Lasswell 240/40'
+    assert hp(v, 1) == (None,) * 4                 # sin verificar: no se muestran como HP/MP
+    out = capsys.readouterr().out
+    assert 'viewmodel CPP_VM_UnitParamPoint: 1 objetos' in out
+    assert 'VM_HP_0 (en CPP_UnitParameter_1001_' in out and 'CurrentValue=270, MaxValue=300' in out
