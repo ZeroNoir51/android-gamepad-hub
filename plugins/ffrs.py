@@ -32,6 +32,7 @@ La EXP para el siguiente nivel se deriva de las curvas; compárala con el menú.
 """
 import collections
 import re
+import struct
 import time
 
 from server.memory import MemoryReadError
@@ -364,7 +365,21 @@ class Plugin(GamePlugin):
     def _resolve_hp_offsets(self, cls):
         ue = self.ue
         cls_name = ue.object_name(cls)
-        props = ue.properties(cls)
+        try:
+            props = ue.properties(cls)
+        except MemoryReadError as ex:
+            # Datos para deducir la disposición a mano: cabecera de la clase y lo que apuntan
+            # los candidatos a ChildProperties.
+            print(f'[ffrs] no se pudo leer la reflexión de {cls_name}: {ex}. Cabecera de la clase:', flush=True)
+            for line in ue.hexdump(cls, 0x80):
+                print(f'  {line}', flush=True)
+            for off in (0x48, 0x50, 0x58, 0x60):
+                ptr = ue.mem.ptr(cls + off)
+                if ptr > 0x10000:
+                    print(f'  clase+0x{off:X} -> 0x{ptr:X}:', flush=True)
+                    for line in ue.hexdump(ptr, 0x60):
+                        print(f'    {line}', flush=True)
+            return {}, f'reflexión de {cls_name} ilegible; ver launcher.log'
         print(f'[ffrs] propiedades de {cls_name} (nombre, tipo, offset, clase):', flush=True)
         for name, ftype, offset, owner in props:
             print(f'  {name:40s} {ftype:20s} 0x{offset:X}  {owner}', flush=True)
@@ -383,11 +398,35 @@ class Plugin(GamePlugin):
             f'; faltan {", ".join(missing)} (ver launcher.log)' if missing else '')
 
     def _hp_mp(self, param):
-        cls = self.ue.mem.ptr(param + OBJ_CLASS)
-        if cls not in self.hp_offsets:
-            self.hp_offsets[cls] = self._resolve_hp_offsets(cls)
-        offsets, self.hp_source = self.hp_offsets[cls]
-        return {k: self.ue.mem.value(t, param + off) for k, (off, t) in offsets.items()}
+        """HP/MP de un parámetro de unidad. Nunca lanza: si falla, el resto de la lectura sigue."""
+        try:
+            cls = self.ue.mem.ptr(param + OBJ_CLASS)
+            if cls not in self.hp_offsets:
+                self.hp_offsets[cls] = self._resolve_hp_offsets(cls)
+            offsets, self.hp_source = self.hp_offsets[cls]
+            if len(offsets) < len(HP_MP_NAMES):
+                self._dump_values(param)
+            return {k: self.ue.mem.value(t, param + off) for k, (off, t) in offsets.items()}
+        except MemoryReadError as ex:
+            self.hp_source = f'error leyendo HP/MP: {ex}'
+            return {}
+
+    def _dump_values(self, param):
+        """Una vez por personaje: los int32 del objeto, para buscar el HP/MP del menú a mano."""
+        try:
+            char_id = self.ue.mem.i32(param + PARAM_CHAR_ID)
+            key = (self.ue.class_name(param), char_id)
+            if key in self.dumped:
+                return
+            self.dumped.add(key)
+            raw = self.ue.mem.read(param, 0x400)
+        except MemoryReadError:
+            return
+        values = struct.unpack('<256i', raw)
+        print(f'[ffrs] valores int32 de {key[0]} de {NAMES.get(char_id, char_id)} '
+              f'(offset: valor; anota el HP/MP que ves en el menú ahora):', flush=True)
+        for row in range(0, 256, 8):
+            print('  ' + '  '.join(f'{(row + i) * 4:03X}:{values[row + i]}' for i in range(8)), flush=True)
 
     # --- lectura periódica ---
     def read(self, mem):

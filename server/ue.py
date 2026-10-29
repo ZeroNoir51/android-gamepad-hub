@@ -8,10 +8,13 @@ shawnjohnjr/ff-RESONANCE-ct (FFRS_Steam_24250053_Starter.CT):
 - UObject: flags +0x08, índice +0x0C, clase +0x10, nombre +0x18, outer +0x20.
 - UStruct: SuperStruct +0x40, Children (UField) +0x48.
 
-Sin verificar con esa tabla (se autocomprueba antes de usarse, ver properties()):
-- UStruct.ChildProperties +0x50; FField: clase +0x08, Next +0x20, nombre +0x28;
-  FProperty.Offset_Internal +0x4C. Es la disposición estándar de UE 5.0-5.4.
+Sin verificar con esa tabla: la reflexión (UStruct.ChildProperties y FField). La
+disposición estándar de UE 5.0-5.3 (ChildProperties +0x50; FField: clase +0x08,
+Next +0x20, nombre +0x28; Offset_Internal +0x4C) NO funcionó en el juego real
+(build 24250053 en Bazzite: FField+0x08 nulo). properties() prueba las variantes de
+REFLECTION_LAYOUTS y se queda con la primera cuyos campos tienen sentido.
 """
+import re
 import struct
 
 from .memory import MemoryReadError
@@ -23,6 +26,15 @@ CHUNK = 65536
 ITEM = 24
 STRUCT_SUPER, STRUCT_CHILD_PROPS = 0x40, 0x50
 FIELD_CLASS, FIELD_NEXT, FIELD_NAME, PROP_OFFSET = 0x08, 0x20, 0x28, 0x4C
+# (UStruct.ChildProperties, FField.ClassPrivate, FField.Next, FField.NamePrivate, FProperty.Offset_Internal)
+REFLECTION_LAYOUTS = [
+    (0x50, 0x08, 0x20, 0x28, 0x4C),   # UE 5.0-5.3 (FFieldVariant de 16 bytes)
+    (0x50, 0x08, 0x18, 0x20, 0x44),   # FFieldVariant de 8 bytes (puntero con marca)
+    (0x58, 0x08, 0x20, 0x28, 0x4C), (0x58, 0x08, 0x18, 0x20, 0x44),
+    (0x48, 0x08, 0x20, 0x28, 0x4C), (0x48, 0x08, 0x18, 0x20, 0x44),
+    (0x60, 0x08, 0x20, 0x28, 0x4C), (0x60, 0x08, 0x18, 0x20, 0x44),
+]
+_IDENT = re.compile(r'^[A-Za-z_][A-Za-z0-9_ ]{0,127}$')
 
 
 class UEReader:
@@ -33,6 +45,7 @@ class UEReader:
         self.gworld = module_base + gworld_rva
         self._names = {}
         self._class_names = {}
+        self.layout = None   # disposición de la reflexión, detectada en el primer uso
         if self.name(0) != 'None':
             raise MemoryReadError('la tabla de nombres no coincide con esta build')
 
@@ -166,22 +179,64 @@ class UEReader:
         return [(self.fname(e), self.mem.ptr(e + 8)) for e in self.sparse_entries(table + 0x30, 24, 10000)]
 
     # --- reflexión de propiedades ---
+    def _walk(self, cls, layout, strict):
+        """Propiedades declaradas en cls (sin padres) con una disposición dada.
+        strict: lanza MemoryReadError si algún campo no parece una FProperty real."""
+        child_props, f_class, f_next, f_name, p_offset = layout
+        out = []
+        field = self.mem.ptr(cls + child_props)
+        for _ in range(2048):
+            if not field:
+                break
+            ftype = self.fname(self.mem.ptr(field + f_class))
+            name = self.fname(field + f_name)
+            offset = self.mem.i32(field + p_offset)
+            if strict and not (ftype.endswith('Property') and name != 'None' and _IDENT.match(name)
+                               and 0 <= offset < 0x100000):
+                raise MemoryReadError('no parece una lista de FProperty')
+            out.append((name, ftype, offset))
+            field = self.mem.ptr(field + f_next)
+        return out
+
+    def detect_layout(self, cls):
+        """Primera disposición de REFLECTION_LAYOUTS que da propiedades coherentes en cls o sus padres."""
+        for layout in REFLECTION_LAYOUTS:
+            c, found = cls, 0
+            try:
+                for _ in range(32):
+                    if not c:
+                        break
+                    found += len(self._walk(c, layout, strict=True))
+                    c = self.mem.ptr(c + STRUCT_SUPER)
+            except MemoryReadError:
+                continue
+            if found:
+                return layout
+        raise MemoryReadError('disposición de la reflexión desconocida (ninguna variante encaja)')
+
     def properties(self, cls):
         """[(nombre, tipo, offset, clase dueña)] recorriendo la clase y sus padres."""
+        if self.layout is None:
+            self.layout = self.detect_layout(cls)
         out = []
         for _ in range(32):
             if not cls:
                 break
             owner = self.object_name(cls)
-            field = self.mem.ptr(cls + STRUCT_CHILD_PROPS)
-            for _ in range(2048):
-                if not field:
-                    break
-                ftype = self.fname(self.mem.ptr(field + FIELD_CLASS))
-                out.append((self.fname(field + FIELD_NAME), ftype, self.mem.i32(field + PROP_OFFSET), owner))
-                field = self.mem.ptr(field + FIELD_NEXT)
+            out += [(name, ftype, offset, owner) for name, ftype, offset in self._walk(cls, self.layout, False)]
             cls = self.mem.ptr(cls + STRUCT_SUPER)
         return out
+
+    def hexdump(self, address, size):
+        """Líneas '+0x10: 0x... 0x...' (u64) para escribir en el log al diagnosticar."""
+        lines = []
+        for off in range(0, size, 0x20):
+            try:
+                words = struct.unpack('<4Q', self.mem.read(address + off, 0x20))
+                lines.append(f'+0x{off:03X}: ' + ' '.join(f'{w:016X}' for w in words))
+            except MemoryReadError:
+                lines.append(f'+0x{off:03X}: ilegible')
+        return lines
 
 
 def pe_info(mem, module_base):

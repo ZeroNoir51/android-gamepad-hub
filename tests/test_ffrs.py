@@ -95,11 +95,28 @@ def test_reflexion_de_batalla_no_verificada(attach):
     assert hp(v, 1) == (None,) * 4
 
 
-def test_reflexion_ausente(attach):
-    g = build_ffrs(battle=[(1001, STATS[1001])], props=None)
+def test_reflexion_ausente_no_rompe_la_lectura(attach, capsys):
+    # En el juego real la reflexión no se podía leer y eso tumbaba TODA la lectura
+    # (Gil congelado, "dirección inválida 0x0" en rojo). Ahora solo faltan HP/MP.
+    g = build_ffrs(party=(1001, 1002), battle=[(1001, STATS[1001])], props=None)
     v = attach(g).read(g.mem)
-    assert 'no verificada' in v['hp_source']
+    assert v['status'] == 'Lectura OK' and v['gil'] == 12345
+    assert v['battle'] == 'en batalla (1)'
+    assert 'ilegible' in v['hp_source']
     assert hp(v, 1) == (None,) * 4
+    out = capsys.readouterr().out
+    assert 'Cabecera de la clase' in out
+    assert 'valores int32 de CPP_BtlUnitParameter de Rain' in out and '0E0:1200' in out
+
+
+def test_disposicion_de_reflexion_alternativa(attach):
+    from server.ue import REFLECTION_LAYOUTS
+    for layout in REFLECTION_LAYOUTS:
+        g = FakeGame(layout=layout)
+        build_ffrs(g, party=(1001,), battle=[(1001, STATS[1001])])
+        plugin = attach(g)
+        assert hp(plugin.read(g.mem), 1) == (1200, 1500, 30, 60), layout
+        assert plugin.ue.layout == layout
 
 
 def test_nombres_ambiguos_se_descartan(attach):
@@ -238,7 +255,7 @@ def test_diagnostico_gestor_de_unidades_nulo(attach, capsys):
     g.mem.put('u64', bm + 0x48, 0)
     v = attach(g).read(g.mem)
     assert v['dbg_battle'] == 'CPP_BtlManager +0x48 = nulo, no es CPP_BtlUnitManager'
-    assert 'propiedades de CPP_BtlManager (gestor de batalla)' in capsys.readouterr().out
+    assert 'gestor de batalla' in capsys.readouterr().out
 
 
 def test_censo_en_el_log(attach, capsys):

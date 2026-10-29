@@ -1,4 +1,4 @@
-# GamePad Hub 0.2.1
+# GamePad Hub 0.2.2
 
 Android (navegador hoy, APK después) → Wi-Fi local → PC Linux: mando virtual, telemetría (FPS, frametimes, CPU/GPU, RAM, latencia) y datos del juego leídos de memoria. **Nada se ejecuta como root.**
 
@@ -16,7 +16,7 @@ Linux (con `kernel.yama.ptrace_scope=1`, el valor de Ubuntu) solo deja leer la m
 El proyecto vive siempre en la misma carpeta, `~/proyectos/gamepad`, y los zips se llaman `gamepad-<versión>.zip` y se descomprimen en ella. Así la ruta del comando no cambia entre versiones.
 
 ```
-cd ~/proyectos && unzip -o gamepad-0.2.1.zip
+cd ~/proyectos && unzip -o gamepad-0.2.2.zip
 cd gamepad && sh tools/install.sh
 systemctl --user enable --now gamepad
 ```
@@ -92,6 +92,7 @@ Instalar: copia `gamepad-decky-<versión>.zip` a la PS5, activa el modo desarrol
 - **Remapear:** si algún botón del mando físico no corresponde (el navegador lo marca como "mapeo no estándar"), pulsa *Remapear* y sigue los pasos: pulsa cada botón, gatillo o dirección que se pide. Lo que no exista se omite. El mapeo se guarda en ese navegador, por mando; *Volver al mapeo por defecto* lo borra. Mientras remapeas, el PC no recibe ninguna pulsación.
 - **Debug:** muestra u oculta el panel de diagnóstico del plugin (estado, origen de HP/MP, mapa, ejecutable, diagnóstico de batalla y de curvas de nivel). Se recuerda en ese navegador.
 - **Táctil:** mando en pantalla, por si no hay mando físico.
+- **Tocar la pantalla = Guide:** un toque en cualquier zona libre (no en botones ni en la barra superior) pulsa Guide durante 150 ms, lo que abre el menú de Steam. Deslizar para desplazar el panel no cuenta como toque.
 
 ## FPS, frametimes y tamaño del log
 

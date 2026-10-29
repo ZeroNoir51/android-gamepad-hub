@@ -109,6 +109,9 @@ body.touchmode .touch{display:flex}
 .b.on{background:var(--amber);color:#1a1408;border-color:var(--amber)}
 .center{display:flex;gap:8px}
 
+.guidetoast{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;pointer-events:none;
+  background:var(--panel);border:1px solid var(--cyan);color:var(--cyan);border-radius:10px;padding:10px 22px;font:600 18px/1 var(--ui)}
+
 /* remapeo */
 .remap{position:fixed;inset:0;background:var(--bg);display:none;flex-direction:column;gap:10px;z-index:5;
   padding:calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 12px)}
@@ -193,6 +196,7 @@ body.locked .login{display:flex}
   </section>
 </main>
 
+<div class="guidetoast" id="guideToast" hidden>Guide</div>
 <footer class="foot" id="foot">Pulsa un botón del mando para detectarlo.</footer>
 
 <div class="remap" id="remap" role="dialog" aria-label="Remapear mando">
@@ -481,8 +485,25 @@ $('#rmSave').onclick = () => {
   padId = ''; setMode('physical');
 };
 
+/* Tocar cualquier zona libre de la pantalla = pulsar Guide (abre el menú de Steam). */
+const GUIDE_PULSE_MS = 150;
+let guideUntil = 0, guideTapped = false;
+document.addEventListener('click', e => {
+  if (mode !== 'physical' || document.body.classList.contains('locked')) return;
+  if (e.target.closest('button, a, input, .top, .remap, .touch, .login')) return;
+  guideUntil = performance.now() + GUIDE_PULSE_MS;
+  const t = $('#guideToast');
+  t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => { t.hidden = true; }, 600);
+});
+
 function frame() {
-  if (mode === 'physical') pollGamepad();
+  if (mode === 'physical') {
+    pollGamepad();
+    // sin mando físico nadie más toca state.guide: hay que soltarlo al acabar el pulso
+    const tapping = performance.now() < guideUntil;
+    if (tapping) state.guide = 1; else if (guideTapped) state.guide = 0;
+    guideTapped = tapping;
+  }
   else if (mode === 'remap') remapTick();   // mientras se remapea, el PC no recibe nada
   sendInput(false);
   requestAnimationFrame(frame);   // se pausa con la pestaña oculta => el servidor suelta los controles

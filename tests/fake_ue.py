@@ -82,7 +82,9 @@ class FakeGame:
 
     OBJ_SIZE = 0x900      # cubre CPP_BtlUnit +0x838
 
-    def __init__(self, build=BUILD):
+    def __init__(self, build=BUILD, layout=None):
+        # Disposición de la reflexión que usa este "juego" (por defecto la de UE 5.0-5.3)
+        self.layout = layout or U.REFLECTION_LAYOUTS[0]
         self.mem = m = FakeMemory()
         self._next = 0x200000000
         # Cabecera PE del módulo
@@ -176,6 +178,7 @@ class FakeGame:
 
     def props(self, cls_name, props):
         """Lista enlazada de FField en ChildProperties: [(nombre, tipo, offset)]."""
+        child_props, f_class, f_next, f_name, p_offset = self.layout
         prev = None
         for name, ftype, offset in props:
             field = self.alloc(0x80)
@@ -183,13 +186,13 @@ class FakeGame:
                 fc = self.alloc(0x20)
                 self.write_fname(fc, ftype)
                 self._field_classes[ftype] = fc
-            self.mem.put('u64', field + U.FIELD_CLASS, self._field_classes[ftype])
-            self.write_fname(field + U.FIELD_NAME, name)
-            self.mem.put('i32', field + U.PROP_OFFSET, offset)
+            self.mem.put('u64', field + f_class, self._field_classes[ftype])
+            self.write_fname(field + f_name, name)
+            self.mem.put('i32', field + p_offset, offset)
             if prev is None:
-                self.mem.put('u64', self.cls(cls_name) + U.STRUCT_CHILD_PROPS, field)
+                self.mem.put('u64', self.cls(cls_name) + child_props, field)
             else:
-                self.mem.put('u64', prev + U.FIELD_NEXT, field)
+                self.mem.put('u64', prev + f_next, field)
             prev = field
 
     def tarray(self, addr, items, kind):
