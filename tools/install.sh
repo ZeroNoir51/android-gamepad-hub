@@ -49,7 +49,7 @@ else
 fi
 if systemctl is-active --quiet firewalld 2>/dev/null; then
   echo
-  echo "AVISO: firewalld está activo. Si Android no conecta (\"Address Unreachable\"), ver README, sección 'Firewall'."
+  echo "AVISO: firewalld está activo (el servicio usa el puerto 8888). Si Android no conecta (\"Address Unreachable\"), ver README, sección 'Firewall'."
 fi
 echo
 echo "Arrancar (y al iniciar sesión): systemctl --user enable --now gamepad"

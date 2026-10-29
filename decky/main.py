@@ -16,7 +16,7 @@ except Exception:   # fuera de Decky (pruebas)
     decky = None
     HOME = Path(os.environ.get('DECKY_USER_HOME') or Path.home())
 
-PORT = 8080
+PORT = 8888
 CODE_FILE = HOME / '.local' / 'state' / 'gamepad' / 'code'
 
 

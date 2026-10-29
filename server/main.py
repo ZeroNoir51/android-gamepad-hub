@@ -48,7 +48,7 @@ class Hub:
 def parse_args(argv=None):
     p = argparse.ArgumentParser(prog='gamepad serve', description='GamePad Hub')
     p.add_argument('--host', default='0.0.0.0')
-    p.add_argument('--port', type=int, default=8080)
+    p.add_argument('--port', type=int, default=status.PORT)
     p.add_argument('--token', help='4 letras A-Z (si no, el código guardado; ver `gamepad code`)')
     p.add_argument('--pad', choices=('auto', 'uinput', 'null'), default='uinput',
                    help='null = sin mando virtual (probar telemetría)')

@@ -6,7 +6,7 @@ Android (navegador hoy, APK después) → Wi-Fi local → PC Linux: mando virtua
 
 | Proceso | Qué hace | Qué no puede hacer |
 |---|---|---|
-| `gamepad serve` (servicio permanente) | mando virtual, telemetría, web y WebSocket en el puerto 8080 | leer la memoria de ningún juego |
+| `gamepad serve` (servicio permanente) | mando virtual, telemetría, web y WebSocket en el puerto 8888 | leer la memoria de ningún juego |
 | `gamepad run %command%` (lo lanza Steam) | lanza el juego como hijo, activa los logs de MangoHud y ejecuta el plugin | abrir puertos de red |
 
 Linux (con `kernel.yama.ptrace_scope=1`, el valor de Ubuntu) solo deja leer la memoria de un proceso a su ancestro. Como el lanzador es el padre del juego, puede leerlo sin root. El servicio que da la cara a la red no tiene ese poder. Los dos se comunican por un socket Unix privado (`$XDG_RUNTIME_DIR/gamepad/hub.sock`, permisos 0600).
@@ -50,7 +50,7 @@ Cierra sesión y vuelve a entrar. Se usa un grupo propio porque el grupo `input`
 Ubuntu no trae firewall activo; Fedora y Bazzite sí. Si Android dice "Address Unreachable", abre el puerto solo para tu red local (ajusta la zona, que ves con `sudo firewall-cmd --get-active-zones`, y el rango de tu red):
 
 ```
-sudo firewall-cmd --permanent --zone=FedoraWorkstation --add-rich-rule='rule family="ipv4" source address="192.168.1.0/24" port port="8080" protocol="tcp" accept'
+sudo firewall-cmd --permanent --zone=FedoraWorkstation --add-rich-rule='rule family="ipv4" source address="192.168.1.0/24" port port="8888" protocol="tcp" accept'
 sudo firewall-cmd --reload
 ```
 
@@ -68,7 +68,7 @@ No desactives firewalld para salir del paso.
 
 1. Servicio: `systemctl --user start gamepad` (y `enable` para que arranque al iniciar sesión).
 2. Código de acceso y URL: `gamepad status`. El código es fijo (se guarda en `~/.local/state/gamepad/code`, 0600); `gamepad code --new` lo cambia y cierra las sesiones abiertas (luego `systemctl --user restart gamepad`). Al arrancar, el servicio manda una notificación de escritorio con la URL y el código.
-3. Android: abre `http://IP-DEL-PC:8080` y escribe el código. La sesión dura 24 h.
+3. Android: abre `http://IP-DEL-PC:8888` y escribe el código. La sesión dura 24 h.
 4. Steam, propiedades del juego, opciones de lanzamiento (ruta absoluta, cambia TU_USUARIO):
    ```
    /home/TU_USUARIO/.local/bin/gamepad run mangohud %command%

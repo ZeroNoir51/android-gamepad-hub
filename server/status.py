@@ -10,7 +10,7 @@ import urllib.request
 
 from . import VERSION, auth, paths
 
-PORT = 8080
+PORT = 8888
 
 
 def lan_ip():
@@ -76,6 +76,6 @@ def main(argv):
     if '--json' in opts:
         print(json.dumps(info))
     else:
-        print(f"GamePad {info['version']}: {'activo' if info['up'] else 'NO responde en el puerto 8080'}")
+        print(f"GamePad {info['version']}: {'activo' if info['up'] else f'NO responde en el puerto {PORT}'}")
         print(f"Android: {info['url']}   código: {info['code']}")
     return 0 if info['up'] else 1

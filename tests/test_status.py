@@ -29,11 +29,11 @@ def test_code_new_cierra_sesiones(monkeypatch, tmp_path, capsys):
 
 def test_status_json(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv('XDG_STATE_HOME', str(tmp_path))
-    monkeypatch.setattr(status, 'service_up', lambda port=8080: False)
+    monkeypatch.setattr(status, 'service_up', lambda port=8888: False)
     monkeypatch.setattr(status, 'lan_ip', lambda: '192.168.1.50')
     assert status.main(['status', '--json']) == 1
     info = json.loads(capsys.readouterr().out)
-    assert info['up'] is False and info['url'] == 'http://192.168.1.50:8080' and len(info['code']) == 4
+    assert info['up'] is False and info['url'] == 'http://192.168.1.50:8888' and len(info['code']) == 4
 
 
 def test_notify_sin_escritorio_no_falla(monkeypatch):
