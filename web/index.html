@@ -75,7 +75,7 @@ body.nogame .main{grid-template-columns:1fr}
 body.nogame .game{display:none}
 body.nogame .sys{border:0}
 /* secciones del plugin */
-.party{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px}
+.party{display:grid;grid-template-columns:repeat(var(--cols,2),minmax(0,1fr));gap:12px 16px}
 .member{display:flex;flex-direction:column;gap:3px;min-width:0}
 .member .head{display:flex;align-items:center;gap:10px;min-width:0}
 .ava{position:relative;flex:none;width:48px;height:48px;border-radius:50%;overflow:hidden;
@@ -115,6 +115,40 @@ body.touchmode .touch{display:flex}
 .guide svg{width:60px;height:60px;flex:none}
 .guide.on{--gbg:var(--amber);background:var(--amber);border-color:var(--amber);color:#1a1408}
 .guide.on svg{color:#1a1408}
+
+/* disposición configurable del panel del juego (Ajustes, por plugin) */
+.game > div:first-child{order:0}
+#gparty{order:2} #gbars{order:3} #gnums{order:4} #ginfo{order:5} #gempty,#gerr{order:6}
+body.stats-first #gnums{order:1}
+.game.hasbg{background:linear-gradient(rgba(21,23,28,var(--dim,.55)),rgba(21,23,28,var(--dim,.55))),var(--bgimg) center/cover no-repeat}
+.game.hasbg h2,.game.hasbg .member,.game.hasbg .gnum,.game.hasbg .sub{text-shadow:0 1px 3px rgba(0,0,0,.7)}
+body.tel-right .sys{order:2;border-right:0;border-left:1px solid var(--line)}
+body.tel-right .main{grid-template-columns:minmax(0,1.45fr) minmax(0,1fr)}
+body.tel-hidden:not(.nogame) .main{grid-template-columns:auto minmax(0,1fr)}
+body.tel-hidden:not(.nogame) .sys > :not(.guiderow){display:none}
+body.tel-hidden:not(.nogame) .guide{padding:6px}
+body.tel-hidden:not(.nogame) .guide span{display:none}
+@media (orientation:portrait){
+  body.tel-right .main,body.tel-hidden:not(.nogame) .main{grid-template-columns:1fr}
+  body.tel-right .sys{border-left:0;border-top:1px solid var(--line)}
+}
+
+/* ajustes */
+.settings{position:fixed;inset:0;background:rgba(10,11,14,.82);z-index:6;display:flex;align-items:center;justify-content:center;padding:16px}
+.settings[hidden]{display:none}
+.setbox{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px 18px;width:min(520px,100%);
+  max-height:100%;overflow:auto;display:flex;flex-direction:column;gap:12px}
+.setbox h1{margin:0;font:600 19px/1.25 var(--ui)}
+.setfor,.sethint{margin:0;color:var(--muted);font-size:13px}
+.setbox label{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);align-items:center;gap:10px;font-size:15px}
+.setbox select,.setbox input[type=range]{width:100%;font:inherit;color:var(--text);background:var(--panel);
+  border:1px solid var(--line);border-radius:8px;padding:6px 8px;accent-color:var(--amber)}
+.setbox fieldset{border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:12px}
+.setbox fieldset:disabled{opacity:.45}
+.dimrow{display:flex;align-items:center;gap:8px}
+.dimrow b{font-family:var(--num);min-width:4.5ch;text-align:right;white-space:nowrap}
+.setfoot{display:flex;justify-content:flex-end}
+.setfoot .go{padding:8px 22px}
 
 /* remapeo */
 .remap{position:fixed;inset:0;background:var(--bg);display:none;flex-direction:column;gap:10px;z-index:5;
@@ -166,6 +200,7 @@ body.locked .login{display:flex}
   <span class="conn" id="conn">Sin conexión</span>
   <span class="spacer"></span>
   <span class="rtt num" id="rtt" title="Ida y vuelta por Wi-Fi">— ms</span>
+  <button class="tbtn" id="setBtn">Ajustes</button>
   <button class="tbtn" id="debugBtn" aria-pressed="false" title="Mostrar datos de diagnóstico">Debug</button>
   <button class="tbtn" id="remapBtn">Remapear</button>
   <button class="tbtn" id="touchBtn">Táctil</button>
@@ -218,6 +253,25 @@ body.locked .login{display:flex}
 </main>
 
 <footer class="foot" id="foot">Pulsa un botón del mando para detectarlo.</footer>
+
+<div class="settings" id="settings" role="dialog" aria-label="Ajustes" hidden>
+  <div class="setbox">
+    <h1>Panel del juego</h1>
+    <p class="setfor" id="setFor"></p>
+    <fieldset id="setFields">
+      <label>Fondo <select id="sBg"></select></label>
+      <label>Oscurecer el fondo <span class="dimrow"><input type="range" id="sDim" min="0" max="90" step="5"><b id="sDimV"></b></span></label>
+      <label>Telemetría <select id="sTel">
+        <option value="left">A la izquierda</option><option value="right">A la derecha</option>
+        <option value="hidden">Oculta (solo el botón Guide)</option></select></label>
+      <label>Orden <select id="sOrder">
+        <option value="party">Equipo primero</option><option value="stats">Estadísticas primero</option></select></label>
+      <label>Columnas del equipo <select id="sCols"><option>1</option><option>2</option><option>4</option></select></label>
+    </fieldset>
+    <p class="sethint">Los fondos son imágenes tuyas (png, jpg o webp) en <code>~/.local/share/gamepad/backgrounds/&lt;plugin&gt;/</code> del PC. Los ajustes se guardan en este navegador, por juego.</p>
+    <div class="setfoot"><button class="go" id="sClose">Listo</button></div>
+  </div>
+</div>
 
 <div class="remap" id="remap" role="dialog" aria-label="Remapear mando">
   <div class="rmhead">
@@ -638,6 +692,69 @@ function setDebug(on) {
 $('#debugBtn').onclick = () => setDebug(!document.body.classList.contains('debug'));
 setDebug(storeGet('debug') === '1');
 
+/* ---------- ajustes del panel del juego (por plugin) ---------- */
+const LAYOUT_DEFAULT = {bg: 'auto', dim: 55, tel: 'left', order: 'party', cols: 2};
+const BG_RE = /^\/backgrounds\/[a-z0-9_]+\/[A-Za-z0-9_-]+\.(png|jpe?g|webp)$/i;
+let curPlugin = null, curPluginName = '', bgList = [];
+function loadLayout(id) {
+  let saved = {};
+  try { saved = JSON.parse(storeGet('layout:' + id) || '{}') || {}; } catch {}
+  return {...LAYOUT_DEFAULT, ...saved};
+}
+function applyLayout() {
+  const l = curPlugin ? loadLayout(curPlugin) : LAYOUT_DEFAULT;
+  document.body.classList.toggle('tel-right', l.tel === 'right');
+  document.body.classList.toggle('tel-hidden', l.tel === 'hidden');
+  document.body.classList.toggle('stats-first', l.order === 'stats');
+  $('#gparty').style.setProperty('--cols', [1, 2, 4].includes(+l.cols) ? +l.cols : 2);
+  // 'auto' = la primera imagen; una que ya no existe también cae en la primera
+  const url = l.bg === 'none' ? null : (bgList.includes(l.bg) ? l.bg : bgList[0]);
+  const g = $('.game');
+  g.classList.toggle('hasbg', !!url && BG_RE.test(url));
+  if (url && BG_RE.test(url)) {
+    g.style.setProperty('--bgimg', `url("${url}")`);
+    g.style.setProperty('--dim', Math.max(0, Math.min(90, +l.dim)) / 100);
+  } else {
+    g.style.removeProperty('--bgimg');
+  }
+  requestAnimationFrame(drawChart);   // la gráfica cambia de tamaño con la disposición
+}
+async function loadMedia(id) {
+  let list = [];
+  try {
+    const r = await fetch(`/api/media/${encodeURIComponent(id)}`, {cache: 'no-store'});
+    if (r.ok) list = ((await r.json()).backgrounds || []).filter(u => typeof u === 'string' && BG_RE.test(u));
+  } catch {}
+  if (id !== curPlugin) return;
+  bgList = list;
+  applyLayout();
+  if (!$('#settings').hidden) fillSettings();
+}
+function fillSettings() {
+  const on = !!curPlugin, l = on ? loadLayout(curPlugin) : LAYOUT_DEFAULT;
+  $('#setFields').disabled = !on;
+  $('#setFor').textContent = on ? curPluginName : 'Abre un juego con plugin para configurar su panel.';
+  const opts = [['auto', bgList.length ? 'Automático (la primera imagen)' : 'Automático (no hay imágenes)'], ['none', 'Ninguno'],
+                ...bgList.map(u => [u, decodeURIComponent(u.split('/').pop())])];
+  $('#sBg').innerHTML = opts.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
+  $('#sBg').value = opts.some(([v]) => v === l.bg) ? l.bg : 'auto';
+  $('#sDim').value = l.dim; $('#sDimV').textContent = `${l.dim} %`;
+  $('#sTel').value = l.tel; $('#sOrder').value = l.order; $('#sCols').value = String(l.cols);
+}
+function changeLayout() {
+  if (!curPlugin) return;
+  const l = {bg: $('#sBg').value, dim: +$('#sDim').value, tel: $('#sTel').value,
+             order: $('#sOrder').value, cols: +$('#sCols').value};
+  storeSet('layout:' + curPlugin, JSON.stringify(l));
+  $('#sDimV').textContent = `${l.dim} %`;
+  applyLayout();
+}
+for (const id of ['#sBg', '#sTel', '#sOrder', '#sCols']) $(id).onchange = changeLayout;
+$('#sDim').oninput = changeLayout;
+$('#setBtn').onclick = () => { fillSettings(); $('#settings').hidden = false; };
+$('#sClose').onclick = () => { $('#settings').hidden = true; };
+$('#settings').onclick = e => { if (e.target.id === 'settings') $('#settings').hidden = true; };
+
 /* ---------- juego ---------- */
 let gFields = [];
 function barHTML(f) {
@@ -649,6 +766,11 @@ function onGameMeta(m) {
   gFields = [];
   const attached = m.state === 'attached';
   document.body.classList.toggle('nogame', !attached);
+  const plugin = attached && /^[a-z0-9_]+$/.test(m.id || '') ? m.id : null;
+  if (plugin !== curPlugin) { curPlugin = plugin; bgList = []; }
+  curPluginName = attached ? m.name : '';
+  applyLayout();
+  if (plugin) loadMedia(plugin);
   if (!attached) return;
   $('#gname').textContent = m.name; $('#gsub').textContent = `PID ${m.pid}`; $('#gempty').hidden = true;
   const members = {};
