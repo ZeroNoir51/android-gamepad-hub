@@ -20,17 +20,20 @@ no hay que cambiar nada en el PC. Sin librerías externas: la APK ocupa unos 32 
 
 Las versiones nuevas se instalan encima solo si están firmadas con la misma clave (ver "Firma").
 
-## Qué hay en esta versión (0.1)
+## Qué hay en esta versión (0.2)
 
 - Conexión con código, reconexión automática y vuelta al login si la sesión caduca.
 - Mando: botones, cruceta (teclas o hat), sticks (Z/RZ o RX/RY según el mando), gatillos (analógicos o
   L2/R2). Usa el mapeo estándar de Android, así que normalmente no hace falta remapear.
-- Botón **Guide** grande (también el botón Guide/Home del mando si Android lo deja pasar).
+- Botón **Guide** grande con el icono de Steam (también el botón Guide/Home del mando si Android lo deja pasar).
+- **Mando táctil** semitransparente sobre el panel (sticks, cruceta, ABXY, LB/LT/RB/RT, Back/Guide/Start,
+  L3/R3), multitáctil. En *Ajustes*: *Nunca*, *Automático* (solo si no hay mando físico conectado) o
+  *Siempre*, y su opacidad. Se suma al mando físico. Los toques fuera de sus controles llegan a la interfaz.
 - FPS, frametimes, CPU/GPU/RAM, latencia y jitter.
-- Panel del plugin: tarjetas del equipo con retrato, nivel, HP, MP y Limit; Gil; datos de **Debug**.
+- Panel del plugin: tarjetas con retrato, nivel, HP, MP y Limit; Gil; **Debug**.
+- **Ajustes** del panel por plugin (como en la web): fondo (imágenes del PC), oscurecido, telemetría a la
+  izquierda/derecha/oculta, orden y columnas.
 - **Servidor**: vuelve a la pantalla de conexión.
-
-Pendiente: remapeo dentro de la APK y mando táctil.
 
 ## Compilar
 
@@ -47,6 +50,19 @@ Necesita JDK 17+ y el SDK de Android (plataforma 36). Con `sdk.dir` en `local.pr
 `keyPassword`). Si no existe, la release se firma con la clave de depuración. `keystore/` está en
 `.gitignore`: guarda tu clave fuera del repositorio y usa siempre la misma, o Android no instalará las
 actualizaciones encima. Cómo crearla: ver el README principal.
+
+### Pruebas de la app (Robolectric)
+
+`app/src/test/` ejecuta la actividad real en la JVM: arranque, panel del juego, disposición, ajustes y el
+mando táctil mezclado con el físico.
+
+```
+./gradlew testReleaseUnitTest
+```
+
+Robolectric descarga una imagen de Android (`android-all-instrumented`, ~200 MB) de Maven Central la primera
+vez. Sin esa red: descárgala a una carpeta y pásala con `-Probolectric.dependency.dir=<carpeta>`. Para
+guardar capturas de la interfaz: `-Pgamepad.screenshots=<carpeta>`.
 
 ### Pruebas sin Android
 

@@ -43,6 +43,10 @@ final class GamePanel {
     private final List<Binding> bindings = new ArrayList<>();
     private final Map<String, String> header = new LinkedHashMap<>();
     private String pidText = "";
+    private final List<View> cards = new ArrayList<>();
+    private int columns = 2;
+    private boolean statsFirst;
+    String pluginId, pluginName;
     private final NumberFormat nf = NumberFormat.getIntegerInstance(new Locale("es"));
     private boolean debug;
 
@@ -86,6 +90,9 @@ final class GamePanel {
 
     void clear() {
         bindings.clear();
+        cards.clear();
+        pluginId = null;
+        pluginName = null;
         header.clear();
         party.removeAllViews();
         stats.removeAllViews();
@@ -102,10 +109,12 @@ final class GamePanel {
         if (!"attached".equals(m.optString("state"))) return;
         empty.setVisibility(View.GONE);
         title.setText(m.optString("name"));
+        String id = m.optString("id", "");
+        pluginId = id.matches("[a-z0-9_]+") ? id : null;
+        pluginName = m.optString("name");
         pidText = "PID " + m.optInt("pid");
         JSONArray fields = m.optJSONArray("fields");
-        Map<Integer, LinearLayout> cards = new LinkedHashMap<>();
-        LinearLayout currentRow = null;
+        Map<Integer, LinearLayout> bySlot = new LinkedHashMap<>();
         for (int i = 0; fields != null && i < fields.length(); i++) {
             JSONObject f = fields.optJSONObject(i);
             if (f == null) continue;
@@ -122,18 +131,11 @@ final class GamePanel {
                     break;
                 case "party": {
                     int slot = f.optInt("slot");
-                    LinearLayout card = cards.get(slot);
+                    LinearLayout card = bySlot.get(slot);
                     if (card == null) {
-                        if (currentRow == null || currentRow.getChildCount() >= 2) {
-                            currentRow = Ui.row(c);
-                            currentRow.setGravity(Gravity.TOP);
-                            party.addView(currentRow);
-                        }
                         card = newCard();
-                        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
-                        lp.setMargins(0, 0, Ui.dp(c, currentRow.getChildCount() == 0 ? 14 : 0), Ui.dp(c, 12));
-                        currentRow.addView(card, lp);
-                        cards.put(slot, card);
+                        bySlot.put(slot, card);
+                        cards.add(card);
                     }
                     b.card = card;
                     bindParty(b, card, color);
@@ -167,12 +169,47 @@ final class GamePanel {
             }
             bindings.add(b);
         }
-        // las tarjetas sueltas en una fila ocupan media fila, como en la web
-        if (currentRow != null && currentRow.getChildCount() == 1) {
-            currentRow.addView(new View(c), new LinearLayout.LayoutParams(0, 1, 1f));
-        }
+        arrangeParty();
         updateSub();
         setDebug(debug);
+    }
+
+    /** Columnas del equipo (1, 2 o 4). */
+    void setColumns(int n) {
+        n = n == 1 || n == 4 ? n : 2;
+        if (n == columns) return;
+        columns = n;
+        arrangeParty();
+    }
+
+    /** Estadísticas (Gil…) antes que el equipo. */
+    void setStatsFirst(boolean on) {
+        if (on == statsFirst) return;
+        statsFirst = on;
+        view.removeView(stats);
+        view.addView(stats, view.indexOfChild(on ? party : info));
+        stats.setPadding(0, on ? 0 : Ui.dp(c, 6), 0, on ? Ui.dp(c, 10) : 0);
+    }
+
+    /** Reparte las tarjetas en filas de `columns`; la última fila se completa con huecos. */
+    private void arrangeParty() {
+        for (View card : cards) {
+            if (card.getParent() != null) ((LinearLayout) card.getParent()).removeView(card);
+        }
+        party.removeAllViews();
+        LinearLayout row = null;
+        for (int i = 0; i < cards.size(); i++) {
+            if (i % columns == 0) {
+                row = Ui.row(c);
+                row.setGravity(Gravity.TOP);
+                party.addView(row);
+            }
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
+            lp.setMargins(0, 0, Ui.dp(c, i % columns == columns - 1 ? 0 : 14), Ui.dp(c, 12));
+            row.addView(cards.get(i), lp);
+        }
+        int rest = cards.size() % columns;
+        for (int i = rest; rest > 0 && i < columns; i++) row.addView(new View(c), new LinearLayout.LayoutParams(0, 1, 1f));
     }
 
     private LinearLayout newCard() {

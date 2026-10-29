@@ -65,7 +65,9 @@ public final class MainActivity extends Activity {
     private final List<Long> rtts = new ArrayList<>();
 
     // mando
-    private final PadState pad = new PadState();
+    private final PadState pad = new PadState();     // lo que se envía: mezcla de los dos
+    private final PadState phys = new PadState();    // mando físico
+    private PadState touchState = new PadState();    // mando táctil (lo rellena TouchPadView)
     private boolean dUp, dDown, dLeft, dRight, guideKey, guideTouch, l2Key, r2Key, guideShown;
     private int hatX, hatY;
     private float ltAxis, rtAxis;
@@ -81,9 +83,20 @@ public final class MainActivity extends Activity {
     private Button debugBtn, guideBtn;
     private ChartView chart;
     private GamePanel game;
-    private LinearLayout body, left;
+    private LinearLayout body, left, telBox;
     private ScrollView right;
     private boolean debug, gameAttached;
+    private SteamIcon guideIcon;
+    private TouchPadView touchPad;
+    private android.hardware.input.InputManager inputManager;
+
+    // panel del juego: fondo y disposición (por plugin, como en la web)
+    private static final java.util.regex.Pattern BG_URL =
+            java.util.regex.Pattern.compile("^/backgrounds/[a-z0-9_]+/[A-Za-z0-9_-]+\\.(?i:png|jpe?g|webp)$");
+    private List<String> bgList = new ArrayList<>();
+    private String bgShownKey, bgLoadingUrl;
+    private Bitmap bgBitmap;
+    private String bgBitmapUrl;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -102,6 +115,9 @@ public final class MainActivity extends Activity {
         super.onResume();
         started = true;
         immersive();
+        if (inputManager == null) inputManager = getSystemService(android.hardware.input.InputManager.class);
+        inputManager.registerInputDeviceListener(deviceListener, ui);
+        updateTouchPad();
         if (cookie == null) {
             showLogin(null);
             return;
@@ -128,6 +144,8 @@ public final class MainActivity extends Activity {
     @Override protected void onPause() {
         super.onPause();
         started = false;
+        if (inputManager != null) inputManager.unregisterInputDeviceListener(deviceListener);
+        if (touchPad != null) touchPad.releaseAll();
         disconnect();
     }
 
@@ -170,6 +188,8 @@ public final class MainActivity extends Activity {
         ui.removeCallbacks(ping);
         ui.removeCallbacks(reconnect);
         if (ws != null) {
+            phys.neutral();
+            touchState.neutral();
             pad.neutral();
             ws.send(pad.toMessage());
             ws.close();
@@ -234,9 +254,22 @@ public final class MainActivity extends Activity {
     private boolean pendingChange;
 
     private void changed(boolean c) {
-        if (!c) return;
+        if (!c || !merge()) return;
         pendingChange = true;
         sendState(false);   // al momento: la latencia la pone la red, no un temporizador
+    }
+
+    /** pad = físico + táctil: botones y gatillos, el mayor; sticks y cruceta, el táctil si se mueve. */
+    private boolean merge() {
+        boolean c = false;
+        for (int i = 0; i < PadState.KEYS.length; i++) {
+            int p = phys.get(i), t = touchState.get(i);
+            int v;
+            if (i <= PadState.RS || i == PadState.LT || i == PadState.RT) v = Math.max(p, t);
+            else v = t != 0 ? t : p;
+            c |= pad.set(i, v);
+        }
+        return c;
     }
 
     private void forgetSession() {
@@ -267,11 +300,15 @@ public final class MainActivity extends Activity {
             case "tel":
                 onTelemetry(m);
                 break;
-            case "game":
+            case "game": {
+                String before = game.pluginId;
                 game.setMeta(m);
                 gameAttached = "attached".equals(m.optString("state"));
+                if (game.pluginId == null || !game.pluginId.equals(before)) bgList = new ArrayList<>();
                 layoutBody();
+                if (game.pluginId != null) fetchMedia(game.pluginId);
                 break;
+            }
             case "gv":
                 game.setValues(m);
                 break;
@@ -350,21 +387,21 @@ public final class MainActivity extends Activity {
         noteDevice(e.getDevice());
         boolean c;
         switch (e.getKeyCode()) {
-            case KeyEvent.KEYCODE_BUTTON_A: c = pad.set(PadState.A, down ? 1 : 0); break;
-            case KeyEvent.KEYCODE_BUTTON_B: c = pad.set(PadState.B, down ? 1 : 0); break;
-            case KeyEvent.KEYCODE_BUTTON_X: c = pad.set(PadState.X, down ? 1 : 0); break;
-            case KeyEvent.KEYCODE_BUTTON_Y: c = pad.set(PadState.Y, down ? 1 : 0); break;
-            case KeyEvent.KEYCODE_BUTTON_L1: c = pad.set(PadState.LB, down ? 1 : 0); break;
-            case KeyEvent.KEYCODE_BUTTON_R1: c = pad.set(PadState.RB, down ? 1 : 0); break;
+            case KeyEvent.KEYCODE_BUTTON_A: c = phys.set(PadState.A, down ? 1 : 0); break;
+            case KeyEvent.KEYCODE_BUTTON_B: c = phys.set(PadState.B, down ? 1 : 0); break;
+            case KeyEvent.KEYCODE_BUTTON_X: c = phys.set(PadState.X, down ? 1 : 0); break;
+            case KeyEvent.KEYCODE_BUTTON_Y: c = phys.set(PadState.Y, down ? 1 : 0); break;
+            case KeyEvent.KEYCODE_BUTTON_L1: c = phys.set(PadState.LB, down ? 1 : 0); break;
+            case KeyEvent.KEYCODE_BUTTON_R1: c = phys.set(PadState.RB, down ? 1 : 0); break;
             case KeyEvent.KEYCODE_BUTTON_L2: l2Key = down; c = updateTriggers(); break;
             case KeyEvent.KEYCODE_BUTTON_R2: r2Key = down; c = updateTriggers(); break;
             case KeyEvent.KEYCODE_BUTTON_SELECT:
-            case KeyEvent.KEYCODE_BACK: c = pad.set(PadState.BACK, down ? 1 : 0); break;
+            case KeyEvent.KEYCODE_BACK: c = phys.set(PadState.BACK, down ? 1 : 0); break;
             case KeyEvent.KEYCODE_BUTTON_START:
-            case KeyEvent.KEYCODE_MENU: c = pad.set(PadState.START, down ? 1 : 0); break;
+            case KeyEvent.KEYCODE_MENU: c = phys.set(PadState.START, down ? 1 : 0); break;
             case KeyEvent.KEYCODE_BUTTON_MODE: guideKey = down; c = updateGuide(); break;
-            case KeyEvent.KEYCODE_BUTTON_THUMBL: c = pad.set(PadState.LS, down ? 1 : 0); break;
-            case KeyEvent.KEYCODE_BUTTON_THUMBR: c = pad.set(PadState.RS, down ? 1 : 0); break;
+            case KeyEvent.KEYCODE_BUTTON_THUMBL: c = phys.set(PadState.LS, down ? 1 : 0); break;
+            case KeyEvent.KEYCODE_BUTTON_THUMBR: c = phys.set(PadState.RS, down ? 1 : 0); break;
             case KeyEvent.KEYCODE_DPAD_UP: dUp = down; c = updateDpad(); break;
             case KeyEvent.KEYCODE_DPAD_DOWN: dDown = down; c = updateDpad(); break;
             case KeyEvent.KEYCODE_DPAD_LEFT: dLeft = down; c = updateDpad(); break;
@@ -383,10 +420,10 @@ public final class MainActivity extends Activity {
         noteDevice(dev);
         boolean zr = dev != null && dev.getMotionRange(MotionEvent.AXIS_Z, e.getSource()) != null
                 && dev.getMotionRange(MotionEvent.AXIS_RZ, e.getSource()) != null;
-        boolean c = pad.set(PadState.LX, PadState.stick(axis(e, dev, MotionEvent.AXIS_X)));
-        c |= pad.set(PadState.LY, PadState.stick(axis(e, dev, MotionEvent.AXIS_Y)));
-        c |= pad.set(PadState.RX, PadState.stick(axis(e, dev, zr ? MotionEvent.AXIS_Z : MotionEvent.AXIS_RX)));
-        c |= pad.set(PadState.RY, PadState.stick(axis(e, dev, zr ? MotionEvent.AXIS_RZ : MotionEvent.AXIS_RY)));
+        boolean c = phys.set(PadState.LX, PadState.stick(axis(e, dev, MotionEvent.AXIS_X)));
+        c |= phys.set(PadState.LY, PadState.stick(axis(e, dev, MotionEvent.AXIS_Y)));
+        c |= phys.set(PadState.RX, PadState.stick(axis(e, dev, zr ? MotionEvent.AXIS_Z : MotionEvent.AXIS_RX)));
+        c |= phys.set(PadState.RY, PadState.stick(axis(e, dev, zr ? MotionEvent.AXIS_RZ : MotionEvent.AXIS_RY)));
         ltAxis = Math.max(axis(e, dev, MotionEvent.AXIS_LTRIGGER), axis(e, dev, MotionEvent.AXIS_BRAKE));
         rtAxis = Math.max(axis(e, dev, MotionEvent.AXIS_RTRIGGER), axis(e, dev, MotionEvent.AXIS_GAS));
         c |= updateTriggers();
@@ -411,22 +448,23 @@ public final class MainActivity extends Activity {
     private boolean updateDpad() {
         int dx = hatX != 0 ? hatX : (dRight ? 1 : 0) - (dLeft ? 1 : 0);
         int dy = hatY != 0 ? hatY : (dDown ? 1 : 0) - (dUp ? 1 : 0);
-        return pad.set(PadState.DX, dx) | pad.set(PadState.DY, dy);
+        return phys.set(PadState.DX, dx) | phys.set(PadState.DY, dy);
     }
 
     /** Gatillo = el mayor entre el eje analógico y la tecla L2/R2 (hay mandos que dan uno u otro). */
     private boolean updateTriggers() {
-        boolean c = pad.set(PadState.LT, l2Key ? 255 : PadState.trigger(ltAxis));
-        return pad.set(PadState.RT, r2Key ? 255 : PadState.trigger(rtAxis)) | c;
+        boolean c = phys.set(PadState.LT, l2Key ? 255 : PadState.trigger(ltAxis));
+        return phys.set(PadState.RT, r2Key ? 255 : PadState.trigger(rtAxis)) | c;
     }
 
     private boolean updateGuide() {
         boolean on = guideKey || guideTouch || SystemClock.uptimeMillis() < guideUntil;
-        boolean c = pad.set(PadState.GUIDE, on ? 1 : 0);
+        boolean c = phys.set(PadState.GUIDE, on ? 1 : 0);
         if (c || guideBtn.getBackground() == null || on != guideShown) {
             guideShown = on;
             guideBtn.setBackground(Ui.rounded(on ? Ui.AMBER : Ui.PANEL, on ? Ui.AMBER : Ui.LINE, 40, this));
             guideBtn.setTextColor(on ? 0xFF1A1408 : Ui.TEXT);
+            guideIcon.setColors(on ? 0xFF1A1408 : Ui.TEXT, on ? Ui.AMBER : Ui.PANEL);
         }
         return c;
     }
@@ -436,7 +474,7 @@ public final class MainActivity extends Activity {
         hatX = hatY = 0;
         ltAxis = rtAxis = 0f;
         guideUntil = 0;
-        changed(pad.neutral());
+        changed(phys.neutral());
     }
 
     private void noteDevice(InputDevice dev) {
@@ -566,9 +604,14 @@ public final class MainActivity extends Activity {
         rtt = Ui.number(this, 15, Ui.CYAN);
         rtt.setPadding(0, 0, Ui.dp(this, 12), 0);
         top.addView(rtt);
+        Button settings = smallButton("Ajustes");
+        settings.setOnClickListener(v -> showSettings());
+        top.addView(settings);
         debugBtn = smallButton("Debug");
         debugBtn.setOnClickListener(v -> setDebug(!debug));
-        top.addView(debugBtn);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(-2, -2);
+        dlp.leftMargin = Ui.dp(this, 8);
+        top.addView(debugBtn, dlp);
         Button server = smallButton("Servidor");
         server.setOnClickListener(v -> showLogin(null));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
@@ -587,7 +630,13 @@ public final class MainActivity extends Activity {
         guideBtn.setTextSize(18);
         guideBtn.setMinHeight(Ui.dp(this, 72));
         guideBtn.setFocusable(false);   // el mando no navega por la interfaz: todo va al PC
-        guideBtn.setPadding(Ui.dp(this, 28), 0, Ui.dp(this, 28), 0);
+        guideBtn.setPadding(Ui.dp(this, 8), 0, Ui.dp(this, 26), 0);
+        guideIcon = new SteamIcon(Ui.TEXT, Ui.PANEL);
+        guideIcon.setBounds(0, 0, Ui.dp(this, 56), Ui.dp(this, 56));
+        guideBtn.setCompoundDrawables(guideIcon, null, null, null);
+        guideBtn.setBackground(Ui.rounded(Ui.PANEL, Ui.LINE, 40, this));   // sin esperar a la primera pulsación
+        guideBtn.setTextColor(Ui.TEXT);
+        guideBtn.setCompoundDrawablePadding(Ui.dp(this, 12));
         guideBtn.setOnTouchListener((v, ev) -> {
             int a = ev.getActionMasked();
             if (a == MotionEvent.ACTION_DOWN) {
@@ -606,6 +655,8 @@ public final class MainActivity extends Activity {
         LinearLayout gr = Ui.row(this);
         gr.addView(guideBtn, new LinearLayout.LayoutParams(-2, Ui.dp(this, 72)));
         left.addView(gr);
+        telBox = Ui.column(this);
+        left.addView(telBox, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         LinearLayout fpsRow = Ui.row(this);
         fpsRow.setGravity(Gravity.BOTTOM);
@@ -620,15 +671,15 @@ public final class MainActivity extends Activity {
         meta.addView(ft);
         fpsRow.addView(fps);
         fpsRow.addView(meta);
-        left.addView(fpsRow);
+        telBox.addView(fpsRow);
         chart = new ChartView(this);
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-1, 0, 1f);
         clp.topMargin = Ui.dp(this, 6);
         clp.bottomMargin = Ui.dp(this, 6);
-        left.addView(chart, clp);
+        telBox.addView(chart, clp);
         mh = Ui.text(this, 12, Ui.AMBER);
         mh.setVisibility(View.GONE);
-        left.addView(mh);
+        telBox.addView(mh);
         GridLayout grid = new GridLayout(this);
         grid.setColumnCount(3);
         grid.setBackground(Ui.rounded(Ui.BG, Ui.LINE, 6, this));
@@ -638,7 +689,7 @@ public final class MainActivity extends Activity {
         gpuLoad = readout(grid, "GPU");
         gpuTemp = readout(grid, "GPU temp.");
         jitter = readout(grid, "Jitter");
-        left.addView(grid);
+        telBox.addView(grid);
 
         game = new GamePanel(this, this::loadPortrait);
         game.setDebug(debug);
@@ -646,7 +697,13 @@ public final class MainActivity extends Activity {
         right.addView(game.view);
         body.addView(left);
         body.addView(right);
-        root.addView(body, new LinearLayout.LayoutParams(-1, 0, 1f));
+        // mando táctil encima del cuerpo (no de la barra superior ni del pie); los toques que no
+        // caen en un control llegan a la interfaz de debajo
+        android.widget.FrameLayout bodyFrame = new android.widget.FrameLayout(this);
+        bodyFrame.addView(body, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        touchPad = new TouchPadView(this, st -> { touchState = st; changed(true); });
+        bodyFrame.addView(touchPad, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        root.addView(bodyFrame, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         root.addView(divider());
         foot = Ui.text(this, 12.5f, Ui.MUTED);
@@ -657,6 +714,7 @@ public final class MainActivity extends Activity {
         setDebug(debug);
         resetTelemetry();
         setConnected(false, null);
+        updateTouchPad();
         return root;
     }
 
@@ -664,19 +722,279 @@ public final class MainActivity extends Activity {
         changed(updateGuide());
     }
 
-    /** Sin juego: la telemetría ocupa todo. Apaisado: columnas 1 : 1.45 como la web. */
+    /** Sin juego: la telemetría ocupa todo. Con juego: la disposición elegida en Ajustes
+     *  (telemetría a la izquierda, a la derecha u oculta) con columnas 1 : 1.45 como la web. */
     private void layoutBody() {
         if (body == null) return;
+        JSONObject l = layout();
+        String tel = gameAttached ? l.optString("tel", "left") : "left";
+        boolean hidden = "hidden".equals(tel);
         boolean landscape = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
         body.setOrientation(landscape ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        body.removeAllViews();
+        if ("right".equals(tel)) { body.addView(right); body.addView(left); }
+        else { body.addView(left); body.addView(right); }
         right.setVisibility(gameAttached ? View.VISIBLE : View.GONE);
+        telBox.setVisibility(hidden ? View.GONE : View.VISIBLE);
+        guideBtn.setText(hidden ? "" : "Guide");
+        guideBtn.setCompoundDrawablePadding(hidden ? 0 : Ui.dp(this, 12));
+        guideBtn.setPadding(Ui.dp(this, 8), 0, Ui.dp(this, hidden ? 8 : 26), 0);
         if (landscape) {
-            left.setLayoutParams(new LinearLayout.LayoutParams(0, -1, 1f));
+            left.setLayoutParams(hidden ? new LinearLayout.LayoutParams(-2, -1) : new LinearLayout.LayoutParams(0, -1, 1f));
             right.setLayoutParams(new LinearLayout.LayoutParams(0, -1, 1.45f));
         } else {
-            left.setLayoutParams(new LinearLayout.LayoutParams(-1, gameAttached ? Ui.dp(this, 360) : 0, gameAttached ? 0 : 1f));
+            int h = hidden ? -2 : (gameAttached ? Ui.dp(this, 360) : 0);
+            left.setLayoutParams(new LinearLayout.LayoutParams(-1, h, gameAttached || hidden ? 0 : 1f));
             right.setLayoutParams(new LinearLayout.LayoutParams(-1, 0, 1f));
         }
+        game.setColumns(l.optInt("cols", 2));
+        game.setStatsFirst("stats".equals(l.optString("order")));
+        applyBackground(l);
+    }
+
+    // ---------------------------------------------------------------- ajustes
+
+    /** Disposición del plugin actual (mismas claves que la web: bg, dim, tel, order, cols). */
+    private JSONObject layout() {
+        JSONObject l = new JSONObject();
+        try {
+            l.put("bg", "auto").put("dim", 55).put("tel", "left").put("order", "party").put("cols", 2);
+            if (game != null && game.pluginId != null) {
+                JSONObject saved = new JSONObject(prefs.getString("layout:" + game.pluginId, "{}"));
+                for (java.util.Iterator<String> it = saved.keys(); it.hasNext(); ) {
+                    String k = it.next();
+                    l.put(k, saved.get(k));
+                }
+            }
+        } catch (Exception ignored) { }
+        return l;
+    }
+
+    private void saveLayout(String key, Object value) {
+        if (game.pluginId == null) return;
+        JSONObject l = layout();
+        try { l.put(key, value); } catch (Exception ignored) { }
+        prefs.edit().putString("layout:" + game.pluginId, l.toString()).apply();
+        layoutBody();
+    }
+
+    private void fetchMedia(String pluginId) {
+        String h = host, c = cookie;
+        int p = port;
+        io.execute(() -> {
+            List<String> list = new ArrayList<>();
+            try {
+                JSONArray arr = new JSONObject(new String(Api.get(h, p, "/api/media/" + pluginId, c), "UTF-8"))
+                        .optJSONArray("backgrounds");
+                for (int i = 0; arr != null && i < arr.length(); i++) {
+                    String u = arr.optString(i);
+                    if (BG_URL.matcher(u).matches()) list.add(u);
+                }
+            } catch (Exception ignored) { }
+            ui.post(() -> {
+                if (!pluginId.equals(game.pluginId)) return;
+                bgList = list;
+                layoutBody();
+            });
+        });
+    }
+
+    /** Fondo del panel del juego: la imagen elegida (o la primera), recortada y oscurecida. */
+    private void applyBackground(JSONObject l) {
+        String bg = l.optString("bg", "auto");
+        String url = !gameAttached || "none".equals(bg) ? null : (bgList.contains(bg) ? bg : (bgList.isEmpty() ? null : bgList.get(0)));
+        float dim = Math.max(0, Math.min(90, l.optInt("dim", 55))) / 100f;
+        String key = url == null ? null : url + "@" + dim;
+        if (key == null ? bgShownKey == null : key.equals(bgShownKey)) return;
+        if (url == null) {
+            bgShownKey = null;
+            right.setBackground(null);
+            return;
+        }
+        if (url.equals(bgBitmapUrl) && bgBitmap != null) {
+            bgShownKey = key;
+            right.setBackground(new CoverDrawable(bgBitmap, dim));
+            return;
+        }
+        if (url.equals(bgLoadingUrl)) return;
+        bgLoadingUrl = url;
+        String h = host, c = cookie;
+        int p = port, target = Math.max(getResources().getDisplayMetrics().widthPixels,
+                getResources().getDisplayMetrics().heightPixels);
+        io.execute(() -> {
+            Bitmap bmp = null;
+            try {
+                byte[] data = Api.get(h, p, url, c);
+                BitmapFactory.Options o = new BitmapFactory.Options();
+                o.inJustDecodeBounds = true;
+                BitmapFactory.decodeByteArray(data, 0, data.length, o);
+                int sample = 1;
+                while (Math.max(o.outWidth, o.outHeight) / (sample * 2) >= target) sample *= 2;
+                BitmapFactory.Options d = new BitmapFactory.Options();
+                d.inSampleSize = sample;
+                bmp = BitmapFactory.decodeByteArray(data, 0, data.length, d);
+            } catch (Exception ignored) { }
+            Bitmap result = bmp;
+            ui.post(() -> {
+                bgLoadingUrl = null;
+                if (result == null) return;
+                bgBitmap = result;
+                bgBitmapUrl = url;
+                bgShownKey = null;
+                layoutBody();
+            });
+        });
+    }
+
+    private static final String[] TOUCH_MODES = {"Nunca", "Automático (si no hay mando físico)", "Siempre"};
+
+    /** 0 nunca, 1 automático, 2 siempre. */
+    private void updateTouchPad() {
+        if (touchPad == null) return;
+        int mode = prefs.getInt("touchMode", 1);
+        boolean show = mode == 2 || (mode == 1 && !hasPhysicalPad());
+        touchPad.setAlpha(prefs.getInt("touchAlpha", 50) / 100f);
+        if (!show) touchPad.releaseAll();
+        touchPad.setVisibility(show ? View.VISIBLE : View.GONE);
+    }
+
+    private static boolean hasPhysicalPad() {
+        for (int id : InputDevice.getDeviceIds()) {
+            InputDevice d = InputDevice.getDevice(id);
+            if (d != null && !d.isVirtual() && fromGamepad(d.getSources())) return true;
+        }
+        return false;
+    }
+
+    private final android.hardware.input.InputManager.InputDeviceListener deviceListener =
+            new android.hardware.input.InputManager.InputDeviceListener() {
+                @Override public void onInputDeviceAdded(int id) { updateTouchPad(); }
+                @Override public void onInputDeviceRemoved(int id) { updateTouchPad(); }
+                @Override public void onInputDeviceChanged(int id) { updateTouchPad(); }
+            };
+
+    private void showSettings() {
+        LinearLayout box = Ui.column(this);
+        int pad = Ui.dp(this, 20);
+        box.setPadding(pad, Ui.dp(this, 8), pad, 0);
+
+        box.addView(section("Mando táctil"));
+        android.widget.RadioGroup modes = new android.widget.RadioGroup(this);
+        for (int i = 0; i < TOUCH_MODES.length; i++) {
+            android.widget.RadioButton rb = new android.widget.RadioButton(this);
+            rb.setText(TOUCH_MODES[i]);
+            rb.setId(View.generateViewId());
+            rb.setTag(i);
+            modes.addView(rb);
+            if (i == prefs.getInt("touchMode", 1)) rb.setChecked(true);
+        }
+        modes.setOnCheckedChangeListener((g, id) -> {
+            prefs.edit().putInt("touchMode", (Integer) g.findViewById(id).getTag()).apply();
+            updateTouchPad();
+        });
+        box.addView(modes);
+        box.addView(slider("Opacidad", 20, 90, prefs.getInt("touchAlpha", 50), v -> {
+            prefs.edit().putInt("touchAlpha", v).apply();
+            updateTouchPad();
+        }));
+
+        boolean has = game.pluginId != null;
+        box.addView(section(has ? "Panel del juego: " + game.pluginName : "Panel del juego"));
+        if (!has) {
+            TextView t = Ui.text(this, 14, Ui.MUTED);
+            t.setText("Abre un juego con plugin para configurar su panel.");
+            box.addView(t);
+        } else {
+            JSONObject l = layout();
+            List<String> bgValues = new ArrayList<>();
+            List<String> bgLabels = new ArrayList<>();
+            bgValues.add("auto");
+            bgLabels.add(bgList.isEmpty() ? "Automático (no hay imágenes)" : "Automático (la primera imagen)");
+            bgValues.add("none");
+            bgLabels.add("Ninguno");
+            for (String u : bgList) {
+                bgValues.add(u);
+                bgLabels.add(u.substring(u.lastIndexOf('/') + 1));
+            }
+            box.addView(choice("Fondo", bgLabels, Math.max(0, bgValues.indexOf(l.optString("bg"))),
+                    i -> saveLayout("bg", bgValues.get(i))));
+            box.addView(slider("Oscurecer el fondo", 0, 90, l.optInt("dim", 55), v -> saveLayout("dim", v)));
+            String[] tels = {"left", "right", "hidden"};
+            box.addView(choice("Telemetría", java.util.Arrays.asList("A la izquierda", "A la derecha", "Oculta (solo Guide)"),
+                    Math.max(0, java.util.Arrays.asList(tels).indexOf(l.optString("tel"))), i -> saveLayout("tel", tels[i])));
+            box.addView(choice("Orden", java.util.Arrays.asList("Equipo primero", "Estadísticas primero"),
+                    "stats".equals(l.optString("order")) ? 1 : 0, i -> saveLayout("order", i == 1 ? "stats" : "party")));
+            int[] cols = {1, 2, 4};
+            int ci = l.optInt("cols", 2) == 1 ? 0 : (l.optInt("cols", 2) == 4 ? 2 : 1);
+            box.addView(choice("Columnas del equipo", java.util.Arrays.asList("1", "2", "4"), ci, i -> saveLayout("cols", cols[i])));
+            TextView hint = Ui.text(this, 12.5f, Ui.MUTED);
+            hint.setText("Los fondos son imágenes tuyas (png, jpg o webp) en ~/.local/share/gamepad/backgrounds/"
+                    + game.pluginId + "/ del PC.");
+            hint.setPadding(0, Ui.dp(this, 10), 0, Ui.dp(this, 6));
+            box.addView(hint);
+        }
+        ScrollView sv = new ScrollView(this);
+        sv.addView(box);
+        new android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Ajustes")
+                .setView(sv)
+                .setPositiveButton("Listo", null)
+                .setOnDismissListener(d -> immersive())
+                .show();
+    }
+
+    private TextView section(String title) {
+        TextView t = Ui.text(this, 15, Ui.AMBER);
+        t.setText(title);
+        t.setPadding(0, Ui.dp(this, 14), 0, Ui.dp(this, 4));
+        return t;
+    }
+
+    private View slider(String label, int min, int max, int value, java.util.function.IntConsumer onChange) {
+        LinearLayout row = Ui.row(this);
+        TextView l = Ui.text(this, 14, Ui.TEXT);
+        l.setText(label);
+        TextView v = Ui.number(this, 14, Ui.TEXT);
+        v.setText(value + " %");
+        v.setMinWidth(Ui.dp(this, 44));
+        android.widget.SeekBar sb = new android.widget.SeekBar(this);
+        sb.setMax(max - min);
+        sb.setProgress(Math.max(0, Math.min(max, value) - min));
+        sb.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(android.widget.SeekBar s, int p, boolean user) {
+                v.setText((p + min) + " %");
+                if (user) onChange.accept(p + min);
+            }
+            @Override public void onStartTrackingTouch(android.widget.SeekBar s) { }
+            @Override public void onStopTrackingTouch(android.widget.SeekBar s) { }
+        });
+        row.addView(l, new LinearLayout.LayoutParams(Ui.dp(this, 150), -2));
+        row.addView(sb, new LinearLayout.LayoutParams(0, -2, 1f));
+        row.addView(v);
+        row.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 4));
+        return row;
+    }
+
+    private View choice(String label, List<String> options, int selected, java.util.function.IntConsumer onChange) {
+        LinearLayout row = Ui.row(this);
+        TextView l = Ui.text(this, 14, Ui.TEXT);
+        l.setText(label);
+        android.widget.Spinner sp = new android.widget.Spinner(this);
+        android.widget.ArrayAdapter<String> ad = new android.widget.ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, options);
+        ad.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        sp.setAdapter(ad);
+        sp.setSelection(Math.min(selected, options.size() - 1), false);
+        sp.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> p, View view, int pos, long id) {
+                onChange.accept(pos);
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> p) { }
+        });
+        row.addView(l, new LinearLayout.LayoutParams(Ui.dp(this, 150), -2));
+        row.addView(sp, new LinearLayout.LayoutParams(0, -2, 1f));
+        row.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 4));
+        return row;
     }
 
     private TextView readout(GridLayout grid, String label) {

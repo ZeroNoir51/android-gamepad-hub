@@ -10,8 +10,8 @@ android {
         applicationId 'dev.gamepad.client'
         minSdk 26
         targetSdk 36
-        versionCode 1
-        versionName '0.1'
+        versionCode 2
+        versionName '0.2'
     }
 
     // Firma de la versión release: keystore/keystore.properties (NO se sube al repositorio).
@@ -41,8 +41,28 @@ android {
         }
     }
 
+    testOptions {
+        unitTests.includeAndroidResources = true
+        // Sin red hacia Maven Central: -Probolectric.dependency.dir=<carpeta con android-all-instrumented-*.jar>
+        unitTests.all {
+            def dir = project.findProperty('robolectric.dependency.dir')
+            def shots = project.findProperty('gamepad.screenshots')
+            if (shots) systemProperty 'gamepad.screenshots', shots
+            if (dir) {
+                systemProperty 'robolectric.offline', 'true'
+                systemProperty 'robolectric.dependency.dir', dir
+            }
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+}
+
+// Solo para los tests (Robolectric ejecuta la actividad en la JVM); no entra en la APK.
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.16'
 }

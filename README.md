@@ -171,9 +171,15 @@ Solo puede haber un cliente conectado a la vez.
 ## Uso
 
 - **Guide:** botón grande arriba de los FPS; equivale al botón Guide del mando (abre el menú de Steam) y se puede mantener pulsado.
+- **Ajustes** (app y web): disposición del panel del juego, **por plugin**:
+  - *Fondo*: automático (la primera imagen), ninguno o una concreta, y cuánto se oscurece;
+  - *Telemetría*: a la izquierda, a la derecha u oculta (queda solo el botón Guide);
+  - *Orden*: el equipo o las estadísticas primero; *Columnas del equipo*: 1, 2 o 4.
+
+  En la app, además, el **mando táctil**: *Nunca*, *Automático* (solo si no hay un mando físico conectado) o *Siempre*, con su opacidad. Se suma al mando físico (por ejemplo, un botón en pantalla mientras usas los físicos).
 - **Debug:** muestra u oculta el diagnóstico del plugin.
 - **Remapear** (web): si algún botón no corresponde ("mapeo no estándar"), pulsa *Remapear* y sigue los pasos; se guarda por mando en ese navegador. La app usa el mapeo estándar de Android.
-- **Táctil** (web): mando en pantalla, por si no hay mando físico.
+- **Táctil** (web): mando en pantalla, por si no hay mando físico. En la app se configura en *Ajustes*.
 - Si no hay juego con plugin, la telemetría ocupa toda la pantalla.
 
 Si el juego no muestra datos, el registro del lanzador está en `$XDG_RUNTIME_DIR/gamepad/launcher.log` (normalmente `/run/user/1000/gamepad/launcher.log`). Para probar sin un juego: `gamepad run python3 tools/demo_game.py`.
@@ -203,7 +209,10 @@ mi_juego/
 
 Cada campo declara dónde se muestra con `section`: `party` (tarjetas por miembro, `slot` 1-4), `stats` (números grandes), `header` (junto al nombre del juego) o `info` (diagnóstico, solo con *Debug*). `kind`: `number`, `bar` (con `max_key`), `text` o `image`. `tone` (color): `hp`, `mp`, `limit`, `gold`, `xp` o `neutral`.
 
-Las imágenes (retratos) las pone el usuario en `~/.local/share/gamepad/portraits/<id>/`; el proyecto no incluye arte de ningún juego.
+Las imágenes las pone el usuario; el proyecto no incluye arte de ningún juego:
+
+- **Retratos**: `~/.local/share/gamepad/portraits/<id>/` (cada plugin decide los nombres).
+- **Fondos** del panel: `~/.local/share/gamepad/backgrounds/<id>/` (`png`, `jpg`, `jpeg` o `webp`, nombres con letras, números, `_` o `-`; hasta 15 MB). Se eligen en *Ajustes*; aparecen al volver a abrir el juego o los Ajustes.
 
 Plugins incluidos en el repositorio:
 
