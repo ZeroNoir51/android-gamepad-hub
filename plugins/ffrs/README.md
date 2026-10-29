@@ -58,6 +58,17 @@ No se incluye arte del juego. Pon tus propias imágenes (`png`, `jpg`, `jpeg` o 
 | 1007 | Jake | `1007.png` o `jake.png` |
 | 1008 | Sakura | `1008.png` o `sakura.png` |
 
+También puedes empaquetarlas **dentro del plugin** para instalarlo con todo en otro equipo (zip para tu uso,
+no lo publiques: es arte con copyright):
+
+```
+sh tools/build-plugin.sh ffrs ~/Descargas --media    # incluye ~/.local/share/gamepad/portraits/ffrs/ y backgrounds/ffrs/
+gamepad plugin install ~/Descargas/gamepad-plugin-ffrs-<versión>-media.zip
+```
+
+Fondos del panel: en `~/.local/share/gamepad/backgrounds/ffrs/` (o dentro del zip con `--media`); se eligen en
+*Ajustes*. Si una imagen está en tu carpeta y en el plugin, gana la de tu carpeta.
+
 Copia los archivos (no enlaces simbólicos que apunten fuera de la carpeta: se rechazan). Basta con una imagen
 cuadrada con la cara centrada; se recorta en círculo. Las imágenes nuevas aparecen en unos 10 s.
 

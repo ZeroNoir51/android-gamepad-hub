@@ -17,7 +17,7 @@ from . import paths
 from .plugins import API_VERSION, check_manifest, read_manifest
 
 MAX_FILES = 500
-MAX_BYTES = 20 * 1024 * 1024
+MAX_BYTES = 200 * 1024 * 1024   # con imágenes (retratos y fondos) dentro
 ROOT = Path(__file__).resolve().parent.parent
 
 

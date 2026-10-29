@@ -64,8 +64,11 @@ Más detalles en [android/README.md](android/README.md).
 Cada plugin se empaqueta aparte como `gamepad-plugin-<id>-<versión>.zip`:
 
 ```
-sh tools/build-plugin.sh ffrs            # crea gamepad-plugin-ffrs-1.0.0.zip y lo valida
+sh tools/build-plugin.sh ffrs                    # crea gamepad-plugin-ffrs-1.0.0.zip y lo valida
+sh tools/build-plugin.sh ffrs ~/Descargas --media   # …-media.zip, con tus retratos y fondos dentro
 ```
+
+`--media` añade las imágenes de `~/.local/share/gamepad/portraits/<id>/` y `~/.local/share/gamepad/backgrounds/<id>/` (también vale ponerlas en `plugins/<id>/portraits/` y `plugins/<id>/backgrounds/`, que git ignora). Ese zip es para tu uso: el arte de los juegos tiene copyright y no se publica en el repositorio.
 
 ### Plugin de Decky (opcional)
 
@@ -213,6 +216,7 @@ Las imágenes las pone el usuario; el proyecto no incluye arte de ningún juego:
 
 - **Retratos**: `~/.local/share/gamepad/portraits/<id>/` (cada plugin decide los nombres).
 - **Fondos** del panel: `~/.local/share/gamepad/backgrounds/<id>/` (`png`, `jpg`, `jpeg` o `webp`, nombres con letras, números, `_` o `-`; hasta 15 MB). Se eligen en *Ajustes*; aparecen al volver a abrir el juego o los Ajustes.
+- Un plugin también puede **traer sus imágenes** (`<id>/portraits/` y `<id>/backgrounds/` dentro del zip, ver `--media`). Si hay una imagen con el mismo nombre en tu carpeta personal, gana la tuya.
 
 Plugins incluidos en el repositorio:
 

@@ -11,3 +11,7 @@ android/keystore/
 serve.log
 feed.log
 state/
+
+# Imágenes de los plugins (arte de los juegos): solo en los zips locales, nunca en el repositorio
+plugins/*/portraits/
+plugins/*/backgrounds/

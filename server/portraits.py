@@ -7,6 +7,10 @@
 
 Fuera de la carpeta del proyecto, así no se pierden al actualizar.
 
+Un plugin también puede traer sus imágenes en <plugin>/portraits/ y <plugin>/backgrounds/
+(las mete `tools/build-plugin.sh <id> --media`). Se busca primero en la carpeta del
+usuario (que así puede sustituir una) y luego en la del plugin instalado o incluido.
+
 El lanzador solo comprueba si existe el archivo y manda la URL; el servicio lo sirve
 tras validar nombre y ruta. Sin SVG: puede llevar scripts.
 """
@@ -25,32 +29,52 @@ CONTENT_TYPES = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 
 RECHECK_EVERY = 10.0   # s; recoge imágenes nuevas sin reiniciar el juego
 
 
-def _root(kind, base):
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def folders(kind, plugin, base=None):
+    """Carpetas donde buscar, por prioridad. Con base (pruebas), solo base/<plugin>."""
     if base:
-        return Path(base)
-    return paths.portraits_dir() if kind == 'portraits' else paths.backgrounds_dir()
+        return [Path(base) / plugin]
+    user = paths.portraits_dir() if kind == 'portraits' else paths.backgrounds_dir()
+    return [user / plugin, paths.plugins_dir() / plugin / kind, ROOT / 'plugins' / plugin / kind]
 
 
-def resolve(plugin, name, base=None, kind='portraits'):
-    """Ruta segura a una imagen existente (y de tamaño razonable), o None."""
-    if kind not in KINDS or not PLUGIN_RE.match(plugin or '') or not NAME_RE.match(name or ''):
+def _valid(plugin, name, kind):
+    return kind in KINDS and PLUGIN_RE.match(plugin or '') and NAME_RE.match(name or '')
+
+
+def _in(folder, name):
+    try:
+        root = folder.resolve()
+        path = (root / name).resolve()
+    except OSError:
         return None
-    root = _root(kind, base).resolve()
-    path = (root / plugin / name).resolve()
-    if not path.is_relative_to(root / plugin) or not path.is_file() or path.stat().st_size > MAX_BYTES:
+    if not path.is_relative_to(root) or not path.is_file() or path.stat().st_size > MAX_BYTES:
         return None
     return path
 
 
+def resolve(plugin, name, base=None, kind='portraits'):
+    """Ruta segura a una imagen existente (y de tamaño razonable), o None."""
+    if not _valid(plugin, name, kind):
+        return None
+    for folder in folders(kind, plugin, base):
+        path = _in(folder, name)
+        if path:
+            return path
+    return None
+
+
 def listing(plugin, kind='backgrounds', base=None):
-    """URLs de las imágenes válidas de un plugin, ordenadas por nombre."""
+    """URLs de las imágenes válidas de un plugin (todas las carpetas, sin repetir), por nombre."""
     if kind not in KINDS or not PLUGIN_RE.match(plugin or ''):
         return []
-    folder = _root(kind, base) / plugin
-    if not folder.is_dir():
-        return []
-    return [f'/{kind}/{plugin}/{p.name}' for p in sorted(folder.iterdir())
-            if resolve(plugin, p.name, base, kind)]
+    names = set()
+    for folder in folders(kind, plugin, base):
+        if folder.is_dir():
+            names.update(p.name for p in folder.iterdir() if NAME_RE.match(p.name) and _in(folder, p.name))
+    return [f'/{kind}/{plugin}/{n}' for n in sorted(names)]
 
 
 def content_type(path):

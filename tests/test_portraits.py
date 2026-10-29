@@ -66,3 +66,32 @@ def test_fondos_listado_y_validacion(tmp_path):
     assert portraits.listing('../x', 'backgrounds', tmp_path) == []
     assert portraits.listing('ffrs', 'otra_cosa', tmp_path) == []
     assert portraits.resolve('ffrs', 'a_dia.webp', tmp_path, kind='otra_cosa') is None
+
+
+def test_imagenes_del_plugin_instalado_y_prioridad_del_usuario(data_home):
+    from server import paths
+    user = paths.backgrounds_dir() / 'ffrs'
+    inst = paths.plugins_dir() / 'ffrs' / 'backgrounds'
+    user.mkdir(parents=True)
+    inst.mkdir(parents=True)
+    (inst / 'del_plugin.webp').write_bytes(b'plugin')
+    (inst / 'comun.png').write_bytes(b'plugin')
+    (user / 'comun.png').write_bytes(b'usuario')
+    assert portraits.resolve('ffrs', 'del_plugin.webp', kind='backgrounds') == (inst / 'del_plugin.webp').resolve()
+    assert portraits.resolve('ffrs', 'comun.png', kind='backgrounds').read_bytes() == b'usuario'
+    assert portraits.listing('ffrs', 'backgrounds') == ['/backgrounds/ffrs/comun.png', '/backgrounds/ffrs/del_plugin.webp']
+    # retratos del plugin para el Finder del plugin
+    (paths.plugins_dir() / 'ffrs' / 'portraits').mkdir()
+    (paths.plugins_dir() / 'ffrs' / 'portraits' / 'rain.png').write_bytes(b'x')
+    assert portraits.Finder('ffrs').url(1001, ('rain',)) == '/portraits/ffrs/rain.png'
+
+
+def test_enlace_que_sale_de_la_carpeta_del_plugin(data_home, tmp_path):
+    import os
+    from server import paths
+    inst = paths.plugins_dir() / 'ffrs' / 'backgrounds'
+    inst.mkdir(parents=True)
+    (tmp_path / 'fuera.png').write_bytes(b'x')
+    os.symlink(tmp_path / 'fuera.png', inst / 'enlace.png')
+    assert portraits.resolve('ffrs', 'enlace.png', kind='backgrounds') is None
+    assert portraits.listing('ffrs', 'backgrounds') == []
