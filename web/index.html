@@ -109,8 +109,12 @@ body.touchmode .touch{display:flex}
 .b.on{background:var(--amber);color:#1a1408;border-color:var(--amber)}
 .center{display:flex;gap:8px}
 
-.tbtn.on{background:var(--amber);color:#1a1408;border-color:var(--amber)}
-#guideBtn{touch-action:none}
+.guiderow{display:flex}
+.guide{--gbg:var(--panel);display:flex;align-items:center;gap:12px;min-height:72px;padding:6px 22px 6px 6px;border-radius:40px;
+  background:var(--panel);border:1px solid var(--line);color:var(--text);font:600 18px/1 var(--ui);touch-action:none}
+.guide svg{width:60px;height:60px;flex:none}
+.guide.on{--gbg:var(--amber);background:var(--amber);border-color:var(--amber);color:#1a1408}
+.guide.on svg{color:#1a1408}
 
 /* remapeo */
 .remap{position:fixed;inset:0;background:var(--bg);display:none;flex-direction:column;gap:10px;z-index:5;
@@ -162,7 +166,6 @@ body.locked .login{display:flex}
   <span class="conn" id="conn">Sin conexión</span>
   <span class="spacer"></span>
   <span class="rtt num" id="rtt" title="Ida y vuelta por Wi-Fi">— ms</span>
-  <button class="tbtn" id="guideBtn" title="Botón Guide del mando (menú de Steam)">Guide</button>
   <button class="tbtn" id="debugBtn" aria-pressed="false" title="Mostrar datos de diagnóstico">Debug</button>
   <button class="tbtn" id="remapBtn">Remapear</button>
   <button class="tbtn" id="touchBtn">Táctil</button>
@@ -170,6 +173,23 @@ body.locked .login{display:flex}
 
 <main class="main">
   <section class="sys" aria-label="Rendimiento">
+    <div class="guiderow">
+      <button class="guide" id="guideBtn" aria-label="Guide (menú de Steam)" title="Botón Guide del mando (menú de Steam)">
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <defs><clipPath id="gclip"><circle cx="50" cy="50" r="47"/></clipPath></defs>
+          <circle cx="50" cy="50" r="47" fill="currentColor"/>
+          <g clip-path="url(#gclip)" fill="var(--gbg)" stroke="var(--gbg)">
+            <path d="M0 44 L36 59 L31 72 L0 58 Z" stroke="none"/>
+            <line x1="36" y1="64" x2="64" y2="37" stroke-width="15" stroke-linecap="round"/>
+            <circle cx="64" cy="37" r="17" stroke="none"/>
+            <circle cx="36" cy="64" r="12" stroke="none"/>
+          </g>
+          <circle cx="64" cy="37" r="10" fill="none" stroke="currentColor" stroke-width="4"/>
+          <circle cx="36" cy="64" r="6.5" fill="none" stroke="currentColor" stroke-width="3.5"/>
+        </svg>
+        <span>Guide</span>
+      </button>
+    </div>
     <div class="fpsrow">
       <div class="fps num idle" id="fps">--</div>
       <div class="fpsmeta">FPS<b class="num" id="ft">— ms</b></div>

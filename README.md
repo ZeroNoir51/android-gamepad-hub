@@ -92,7 +92,7 @@ Instalar: copia `gamepad-decky-<versión>.zip` a la PS5, activa el modo desarrol
 - **Remapear:** si algún botón del mando físico no corresponde (el navegador lo marca como "mapeo no estándar"), pulsa *Remapear* y sigue los pasos: pulsa cada botón, gatillo o dirección que se pide. Lo que no exista se omite. El mapeo se guarda en ese navegador, por mando; *Volver al mapeo por defecto* lo borra. Mientras remapeas, el PC no recibe ninguna pulsación.
 - **Debug:** muestra u oculta el panel de diagnóstico del plugin (estado, origen de HP/MP, mapa, ejecutable, diagnóstico de batalla y de curvas de nivel). Se recuerda en ese navegador.
 - **Táctil:** mando en pantalla, por si no hay mando físico.
-- **Guide:** botón de la barra superior, junto a la latencia. Equivale al botón Guide del mando (abre el menú de Steam); se puede mantener pulsado.
+- **Guide:** botón grande (tamaño pulgar) arriba de los FPS. Equivale al botón Guide del mando (abre el menú de Steam); se puede mantener pulsado.
 
 ## FPS, frametimes y tamaño del log
 
