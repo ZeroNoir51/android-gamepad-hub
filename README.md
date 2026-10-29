@@ -1,4 +1,4 @@
-# PS5 GamePad Hub v0.4.2
+# PS5 GamePad Hub v0.4.3
 
 Android (navegador hoy, APK después) → Wi-Fi local → PC Linux: mando virtual, telemetría (FPS, frametimes, CPU/GPU, RAM, latencia) y datos del juego leídos de memoria. **Nada se ejecuta como root.**
 
@@ -14,7 +14,7 @@ Linux (con `kernel.yama.ptrace_scope=1`, el valor de Ubuntu) solo deja leer la m
 ## Instalación (con tu usuario, sin sudo)
 
 ```
-cd ps5-gamepad-v0.4.2
+cd ps5-gamepad-v0.4.3
 sh tools/install.sh
 ```
 
@@ -80,15 +80,52 @@ Solo para la build 24250053 de Steam: comprueba la cabecera PE del ejecutable (t
 | Gil | estadísticas | partida activa, ruta de la tabla |
 | Nombre de los 4 miembros | tarjetas | equipo de la partida; en batalla, orden de la batalla |
 | Nivel y EXP para el siguiente | línea bajo el nombre | EXP de la partida + curvas de nivel del juego (cálculo propio: compáralo con el menú) |
-| HP y MP | barras de cada tarjeta, solo en batalla | reflexión de Unreal por nombre de propiedad (ver abajo) |
+| HP y MP | barras de cada tarjeta | en batalla: reflexión de Unreal por nombre de propiedad; fuera de batalla: experimental (ver abajo) |
+| Retrato | círculo junto al nombre | imágenes tuyas (ver "Retratos"); si no hay, la inicial |
 
 **HP y MP.** La tabla no los lee, así que el plugin los busca por nombre en la descripción interna de la clase `CPP_BtlUnitParameter` (por ejemplo `HitPoint` y `MaxHitPoint`, el estilo de nombres que usa el juego). Antes de fiarse, comprueba que la reflexión encuentre dos offsets ya confirmados por la tabla (`0xD0`, ID del personaje, y `0x118`, Limit). Si la comprobación falla o un nombre es ambiguo, no muestra ese valor y lo indica en "Origen HP/MP". En la primera batalla escribe la lista completa de propiedades en `launcher.log`.
+
+**HP y MP fuera de batalla (experimental).** La tabla los obtiene llamando a una función del juego, cosa que un lector no puede hacer. El plugin busca los objetos `CPP_UnitParameter` (la clase base de la de batalla) y usa uno solo si es el único con el ID de ese personaje; si hay varios o desaparece, no muestra nada hasta reescanear (cada 15 s como mucho). Aquí la reflexión solo se puede validar con `0xD0`. "Origen HP/MP" termina en "(experimental)" cuando el dato viene de esta vía: compáralo con el menú del juego.
+
+### Retratos
+
+No se incluye arte del juego: pones tus propias imágenes en
+
+```
+~/.local/share/ps5gamepad/portraits/ffrs/
+```
+
+Está fuera de la carpeta del proyecto, así no se pierden al descomprimir otra versión. Formatos: `png`, `jpg`, `jpeg`, `webp` (SVG no). Se aceptan dos nombres por personaje: el ID o el nombre en minúsculas.
+
+| ID | Personaje | Archivo |
+|---|---|---|
+| 1001 | Rain | `1001.png` o `rain.png` |
+| 1002 | Lasswell | `1002.png` o `lasswell.png` |
+| 1003 | Fina | `1003.png` o `fina.png` |
+| 1004 | Lid | `1004.png` o `lid.png` |
+| 1005 | Nichol | `1005.png` o `nichol.png` |
+| 1006 | Archwitch Fina | `1006.png`, `archwitch_fina.png` o `dark_fina.png` |
+| 1007 | Jake | `1007.png` o `jake.png` |
+| 1008 | Sakura | `1008.png` o `sakura.png` |
+
+Copia los archivos (no enlaces simbólicos que apunten fuera de la carpeta: se rechazan). Basta con una imagen cuadrada con la cara centrada; se recorta en círculo. Las imágenes nuevas aparecen en unos 10 s, sin reiniciar nada.
 
 El escaneo de objetos para encontrar la partida tarda unos segundos; se hace una vez al cargar y, mientras estés en el título, se reintenta cada 10 s.
 
 No uses plugins en juegos online con anti-cheat.
 
+## Tests
+
+```
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+.venv/bin/pytest -q
+```
+
+`tests/fake_ue.py` monta en memoria la estructura de UE5 que describe la tabla CT y ejecuta el plugin real contra ella.
+
 ## Seguridad
+
+- Los retratos se sirven solo con sesión, con nombres validados, sin SVG y sin salir de su carpeta.
 
 - Ningún componente necesita root; el servicio corre con `NoNewPrivileges`.
 - El servicio web no puede leer memoria de juegos; el lector no abre puertos.
@@ -116,7 +153,9 @@ server/
   ue.py         lector de Unreal Engine 5 (nombres, objetos, GWorld)
   plugins.py    carga y ciclo de vida de plugins
   paths.py      rutas por usuario
+  portraits.py  retratos del usuario: búsqueda y validación de rutas
 plugins/        ffrs.py, demo_game.py, _template.py
+tests/          arnés de memoria UE5 sintética y tests (pytest)
 tools/          install.sh, ps5gamepad.service, demo_game.py
 web/index.html  cliente Android
 ```
