@@ -264,3 +264,9 @@ decky/          plugin de Decky Loader
 tests/          pytest
 tools/          install.sh, gamepad.service, build-plugin.sh, build-decky.sh, demo_game.py
 ```
+
+## Créditos
+
+Creado por [ZeroNoir51](https://github.com/ZeroNoir51), con [Claude](https://claude.ai) (Anthropic) como asistente de programación: diseño, código, pruebas y documentación se hicieron en colaboración, y los commits lo indican con `Co-Authored-By: Claude`.
+
+Las rutas de memoria del plugin de FINAL FANTASY RESONANCE parten de la tabla de Cheat Engine `FFRS_Steam_24250053_Starter.CT` de shawnjohnjr/ff-RESONANCE-ct.
