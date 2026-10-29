@@ -16,6 +16,13 @@ def load_plugin(stem):
     return module
 
 
+@pytest.fixture(autouse=True)
+def data_home(tmp_path, monkeypatch):
+    """Retratos y demás datos del usuario en una carpeta temporal."""
+    monkeypatch.setenv('XDG_DATA_HOME', str(tmp_path / 'share'))
+    return tmp_path / 'share'
+
+
 @pytest.fixture
 def ffrs():
     return load_plugin('ffrs')

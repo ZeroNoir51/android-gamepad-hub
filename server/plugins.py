@@ -23,7 +23,7 @@ from .memory import MemoryReadError, ProcessGone, descendants, open_process
 class Field:
     key: str
     label: str
-    kind: str = 'number'      # 'number' | 'bar' | 'text'
+    kind: str = 'number'      # 'number' | 'bar' | 'text' | 'image' (URL /portraits/<plugin>/<archivo>)
     max_key: str = None       # para 'bar': clave del valor máximo
     tone: str = 'neutral'     # 'hp' | 'mp' | 'gold' | 'xp' | 'neutral' (color en el cliente)
     section: str = 'stats'    # dónde se muestra: 'party' | 'stats' | 'info'

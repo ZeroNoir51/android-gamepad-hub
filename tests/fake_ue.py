@@ -249,13 +249,14 @@ def cumulative(level):
 
 
 def build_ffrs(game=None, *, party=(1001, 1002), units=None, gil=12345,
-               battle=None, props=HP_PROPS, curve_for=None, save=True,
+               battle=None, field=None, props=HP_PROPS, curve_for=None, save=True,
                world_class='World'):
     """Escenario completo de FFRS.
 
     party: IDs del equipo (SaveData +0x90).
     units: {id: exp}; por defecto, los del equipo con EXP para nivel 5 y 10.
     battle: None (fuera de batalla) o [(id, {'hp':..,'hp_max':..,'mp':..,'mp_max':..})].
+    field: CPP_UnitParameter vivos fuera de batalla, con el mismo formato que battle.
     curve_for: IDs con curva de nivel; por defecto los 8 personajes.
     """
     g = game or FakeGame()
@@ -316,15 +317,28 @@ def build_ffrs(game=None, *, party=(1001, 1002), units=None, gil=12345,
         actors = []
         for k, (cid, stats) in enumerate(battle):
             actor = g.obj(f'CPP_BtlUnit_{k}', 'CPP_BtlUnit', outer=world)
-            param = g.obj(f'CPP_BtlUnitParameter_{k}', 'CPP_BtlUnitParameter', outer=actor)
+            param = unit_parameter(g, 'CPP_BtlUnitParameter', cid, stats, outer=actor)
             m.put('u64', actor + 0x838, param)
-            m.put('i32', param + 0xD0, cid)
-            for key, off in (('hp', 0xE0), ('hp_max', 0xE4), ('mp', 0xE8), ('mp_max', 0xEC)):
-                if key in stats:
-                    m.put('i32', param + off, stats[key])
             actors.append(actor)
         g.tarray(um + 0x28, actors, 'u64')
         subs.append(bm)
     for e, obj in g.sparse(world + 0x930, subs, holes=(0,)):
         m.put('u64', e + 8, obj)
+    g.field_params = [unit_parameter(g, 'CPP_UnitParameter', cid, stats, outer=g.gi)
+                      for cid, stats in (field or ())]
     return g
+
+
+def unit_parameter(g, cls, cid, stats, outer=0):
+    """CPP_UnitParameter o CPP_BtlUnitParameter con ID en +0xD0 y HP/MP en HP_PROPS."""
+    param = g.obj(f'{cls}_{cid}_{len(g.objects)}', cls, outer=outer)
+    g.mem.put('i32', param + 0xD0, cid)
+    for key, off in (('hp', 0xE0), ('hp_max', 0xE4), ('mp', 0xE8), ('mp_max', 0xEC)):
+        if key in stats:
+            g.mem.put('i32', param + off, stats[key])
+    return param
+
+
+def kill(g, obj):
+    """Marca un objeto como destruido (BeginDestroyed), como hace UE al descargar un mapa."""
+    g.mem.put('i32', obj + U.OBJ_FLAGS, RF_BEGIN_DESTROYED)

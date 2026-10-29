@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 from aiohttp import web, WSMsgType
 
-from . import VERSION, paths, protocol
+from . import VERSION, paths, portraits, protocol
 from .auth import COOKIE, SESSION_TTL, AuthGuard, SessionStore
 from .pad import create_pad
 from .telemetry import MangoHudTail, SystemTelemetry
@@ -93,6 +93,17 @@ def main(argv=None):
     # --- HTTP ---
     async def index(request):
         return web.FileResponse(ROOT / 'web' / 'index.html', headers={'Cache-Control': 'no-store'})
+
+    async def portrait(request):
+        if not authorized(request):
+            raise web.HTTPForbidden(text='Sin sesión')
+        path = portraits.resolve(request.match_info['plugin'], request.match_info['name'])
+        if path is None:
+            raise web.HTTPNotFound()
+        return web.FileResponse(path, headers={
+            'Content-Type': portraits.content_type(path),
+            'X-Content-Type-Options': 'nosniff',
+            'Cache-Control': 'private, max-age=3600'})
 
     async def api_session(request):
         return web.json_response({'ok': authorized(request)})
@@ -253,6 +264,7 @@ def main(argv=None):
     app.router.add_post('/api/login', api_login)
     app.router.add_post('/api/logout', api_logout)
     app.router.add_get('/ws', ws_handler)
+    app.router.add_get('/portraits/{plugin}/{name}', portrait)
     app.cleanup_ctx.append(lifetime)
 
     print(f'PS5 GamePad Hub {VERSION} · mando: {pad.name}', flush=True)

@@ -36,3 +36,17 @@ def state_dir():
     path = Path(base) / 'ps5gamepad'
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     return path
+
+
+def data_dir():
+    """~/.local/share/ps5gamepad: datos del usuario que sobreviven a cambiar de versión."""
+    base = os.environ.get('XDG_DATA_HOME') or str(Path.home() / '.local' / 'share')
+    path = Path(base) / 'ps5gamepad'
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return path
+
+
+def portraits_dir():
+    path = data_dir() / 'portraits'
+    path.mkdir(mode=0o700, exist_ok=True)
+    return path

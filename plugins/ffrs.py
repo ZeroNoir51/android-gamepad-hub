@@ -17,7 +17,16 @@ Solo lectura. Las rutas vienen de la tabla FFRS_Steam_24250053_Starter.CT
 HP y MP en batalla: la tabla no los lee. Se buscan por NOMBRE en la reflexión de
 CPP_BtlUnitParameter (el juego usa nombres como "MaxHitPoint"). La reflexión se
 autocomprueba: debe encontrar los offsets conocidos 0xD0 y 0x118 (Limit). La lista
-completa de propiedades se escribe en launcher.log la primera vez.
+completa de propiedades se escribe en launcher.log la primera vez, por clase.
+
+HP y MP fuera de batalla (EXPERIMENTAL): la tabla llama a una función nativa
+(0x523D360) para obtener el CPP_UnitParameter vivo de cada personaje; un lector no
+puede llamar funciones. En su lugar se escanean los objetos CPP_UnitParameter
+(clase base de CPP_BtlUnitParameter, según los `isa` de la tabla) y se usa uno solo
+si es el único con ese ID en +0xD0. Su reflexión solo puede exigir 0xD0.
+
+Retratos: imágenes del propio usuario en ~/.local/share/ps5gamepad/portraits/ffrs/
+(ver server/portraits.py). No se incluye arte del juego.
 
 La EXP para el siguiente nivel se deriva de las curvas; compárala con el menú.
 """
@@ -25,8 +34,9 @@ import re
 import time
 
 from server.memory import MemoryReadError
+from server import portraits
 from server.plugins import Field, GamePlugin
-from server.ue import OBJ_OUTER, UEReader, pe_info
+from server.ue import OBJ_CLASS, OBJ_OUTER, UEReader, pe_info
 
 MODULE = 'FFRS-Win64-Shipping.exe'
 BUILD = {'timestamp': 0x6A586B2F, 'image_size': 503013376}     # build 24250053
@@ -38,10 +48,15 @@ SAVE_GIL, SAVE_UNITS, SAVE_PARTY = 0x28, 0x60, 0x90
 UNIT_STRIDE, UNIT_EXP = 0xA0, 0x04
 WORLD_SUBSYSTEMS = 0x930
 BTL_UNIT_MANAGER, UNITS_ARRAY, UNIT_PARAMETER, PARAM_CHAR_ID = 0x48, 0x28, 0x838, 0xD0
-KNOWN_PARAM_OFFSETS = {0xD0, 0x118}                       # para validar la reflexión
+KNOWN_BATTLE_OFFSETS = {0xD0, 0x118}      # para validar la reflexión de CPP_BtlUnitParameter
+KNOWN_BASE_OFFSETS = {0xD0}               # CPP_UnitParameter: el Limit solo existe en batalla
 
 NAMES = {1001: 'Rain', 1002: 'Lasswell', 1003: 'Fina', 1004: 'Lid',
-         1005: 'Nichol', 1006: 'Fina oscura', 1007: 'Jake', 1008: 'Sakura'}
+         1005: 'Nichol', 1006: 'Archwitch Fina', 1007: 'Jake', 1008: 'Sakura'}
+# Nombres de archivo de retrato aceptados además de <id>.png (los del script de recortes)
+PORTRAIT_NAMES = {1001: ('rain',), 1002: ('lasswell',), 1003: ('fina',), 1004: ('lid',),
+                  1005: ('nichol',), 1006: ('archwitch_fina', 'dark_fina'), 1007: ('jake',),
+                  1008: ('sakura',)}
 
 # Nombres normalizados (minúsculas, sin "m_" ni "_") que se aceptan para cada valor.
 HP_MP_NAMES = {
@@ -52,7 +67,8 @@ HP_MP_NAMES = {
 }
 NUMERIC = {'IntProperty': 'i32', 'UInt32Property': 'u32', 'FloatProperty': 'f32',
            'Int64Property': 'i64', 'DoubleProperty': 'f64', 'Int16Property': 'i16'}
-RESCAN_EVERY = 10.0   # s; solo mientras no hay partida (en el título)
+RESCAN_EVERY = 10.0         # s; solo mientras no hay partida (en el título)
+PARAM_RESCAN_EVERY = 15.0   # s; CPP_UnitParameter de fuera de batalla, si falta alguno
 
 
 def _party_fields():
@@ -60,6 +76,7 @@ def _party_fields():
     for n in range(1, 5):
         fields += [
             Field(f'p{n}_name', f'Miembro {n}', kind='text', section='party', slot=n),
+            Field(f'p{n}_img', 'Retrato', kind='image', section='party', slot=n),
             Field(f'p{n}_lv', 'Nivel', kind='text', section='party', slot=n),
             Field(f'p{n}_hp', 'HP', kind='bar', max_key=f'p{n}_hp_max', tone='hp', section='party', slot=n),
             Field(f'p{n}_mp', 'MP', kind='bar', max_key=f'p{n}_mp_max', tone='mp', section='party', slot=n),
@@ -95,20 +112,25 @@ class Plugin(GamePlugin):
         self.manager = None
         self.curves = None           # {id de personaje: [EXP acumulada para nivel 1..99]}
         self.next_scan = 0.0
-        self.hp_offsets = None       # {'hp': (offset, tipo), ...} resuelto por reflexión
-        self.hp_source = 'esperando una batalla'
+        self.hp_offsets = {}         # {clase: ({'hp': (offset, tipo), ...}, descripción)}
+        self.field_params = {}       # {id de personaje: CPP_UnitParameter} fuera de batalla
+        self.next_param_scan = 0.0
+        self.hp_source = 'esperando datos'
+        self.portraits = portraits.Finder(self.id)
         print(f'[ffrs] PID {proc.pid}, base 0x{self.base:x}, build {self.build}', flush=True)
 
     # --- partida y tablas ---
     def _find_save(self, world):
         gi = self.ue.mem.ptr(world + WORLD_GAME_INSTANCE)
         t0 = time.monotonic()
-        found = self.ue.scan({'CPP_MuchaSaveDataManager', 'DataTable'})
+        found = self.ue.scan({'CPP_MuchaSaveDataManager', 'DataTable', 'CPP_UnitParameter'})
         managers = [m for m in found['CPP_MuchaSaveDataManager'] if self.ue.mem.ptr(m + OBJ_OUTER) == gi]
         print(f'[ffrs] escaneo: {self.ue.object_count()} objetos en {time.monotonic() - t0:.1f} s, '
               f'{len(managers)} gestor(es) de partida', flush=True)
         if len(managers) != 1:
             return None
+        self._set_field_params(found['CPP_UnitParameter'])
+        self.next_param_scan = time.monotonic() + PARAM_RESCAN_EVERY
         if self.curves is None:
             try:
                 self.curves = self._load_curves(found['DataTable'])
@@ -190,29 +212,69 @@ class Plugin(GamePlugin):
                 members.append((char_id, param))
         return members
 
-    def _resolve_hp_offsets(self, param):
-        props = self.ue.properties(self.ue.mem.ptr(param + 0x10))
-        print('[ffrs] propiedades de CPP_BtlUnitParameter (nombre, tipo, offset, clase):', flush=True)
+    # --- fuera de batalla (experimental) ---
+    def _set_field_params(self, objects):
+        by_id = {}
+        for obj in objects:
+            try:
+                by_id.setdefault(self.ue.mem.i32(obj + PARAM_CHAR_ID), []).append(obj)
+            except MemoryReadError:
+                continue
+        # Solo IDs con un único objeto: si hay varios no sabemos cuál es el vivo
+        self.field_params = {cid: objs[0] for cid, objs in by_id.items() if cid in NAMES and len(objs) == 1}
+        dup = sorted(cid for cid, objs in by_id.items() if cid in NAMES and len(objs) > 1)
+        print(f'[ffrs] CPP_UnitParameter: {len(objects)} objetos; únicos {sorted(self.field_params)}'
+              + (f'; ambiguos {dup}' if dup else ''), flush=True)
+
+    def _field_param(self, char_id):
+        """CPP_UnitParameter de un personaje si sigue vivo y su ID no cambió."""
+        obj = self.field_params.get(char_id)
+        if obj is not None:
+            try:
+                if self.ue.live(obj) and self.ue.mem.i32(obj + PARAM_CHAR_ID) == char_id:
+                    return obj
+            except MemoryReadError:
+                pass
+            del self.field_params[char_id]
+        return None
+
+    def _refresh_field_params(self, roster_ids):
+        """Reescanea (con límite de frecuencia) si falta el objeto de algún miembro."""
+        if all(self._field_param(cid) for cid in roster_ids) or time.monotonic() < self.next_param_scan:
+            return
+        self.next_param_scan = time.monotonic() + PARAM_RESCAN_EVERY
+        t0 = time.monotonic()
+        self._set_field_params(self.ue.scan({'CPP_UnitParameter'})['CPP_UnitParameter'])
+        print(f'[ffrs] reescaneo de CPP_UnitParameter en {time.monotonic() - t0:.1f} s', flush=True)
+
+    # --- HP y MP por reflexión, una vez por clase ---
+    def _resolve_hp_offsets(self, cls):
+        ue = self.ue
+        cls_name = ue.object_name(cls)
+        props = ue.properties(cls)
+        print(f'[ffrs] propiedades de {cls_name} (nombre, tipo, offset, clase):', flush=True)
         for name, ftype, offset, owner in props:
             print(f'  {name:40s} {ftype:20s} 0x{offset:X}  {owner}', flush=True)
-        if not KNOWN_PARAM_OFFSETS <= {p[2] for p in props}:
-            self.hp_offsets = {}
-            self.hp_source = 'reflexión no verificada (offsets 0xD0/0x118 ausentes); ver launcher.log'
-            return
+        required = KNOWN_BATTLE_OFFSETS if cls_name == 'CPP_BtlUnitParameter' else KNOWN_BASE_OFFSETS
+        if not required <= {p[2] for p in props}:
+            wanted = '/'.join(f'0x{o:X}' for o in sorted(required))
+            return {}, f'reflexión de {cls_name} no verificada ({wanted} ausentes); ver launcher.log'
         chosen = {}
         for key, accepted in HP_MP_NAMES.items():
             hits = [(off, NUMERIC[t]) for name, t, off, _ in props if _norm(name) in accepted and t in NUMERIC]
             if len(hits) == 1:
                 chosen[key] = hits[0]
-        self.hp_offsets = chosen
         missing = sorted(set(HP_MP_NAMES) - set(chosen))
         found = ', '.join(f'{k}@0x{v[0]:X}' for k, v in sorted(chosen.items()))
-        self.hp_source = f'por nombre: {found or "ninguno"}' + (f'; faltan {", ".join(missing)} (ver launcher.log)' if missing else '')
+        return chosen, f'por nombre: {found or "ninguno"}' + (
+            f'; faltan {", ".join(missing)} (ver launcher.log)' if missing else '')
 
     def _hp_mp(self, param):
-        if self.hp_offsets is None:
-            self._resolve_hp_offsets(param)
-        return {k: self.ue.mem.value(t, param + off) for k, (off, t) in self.hp_offsets.items()}
+        cls = self.ue.mem.ptr(param + OBJ_CLASS)
+        if cls not in self.hp_offsets:
+            self.hp_offsets[cls] = self._resolve_hp_offsets(cls)
+        offsets, self.hp_source = self.hp_offsets[cls]
+        return {k: self.ue.mem.value(t, param + off) for k, (off, t) in offsets.items()}
 
     # --- lectura periódica ---
     def read(self, mem):
@@ -249,14 +311,20 @@ class Plugin(GamePlugin):
         values['battle'] = f'en batalla ({len(members)})' if members else 'fuera de batalla'
         if members:
             roster = members
+        else:
+            self._refresh_field_params([cid for cid, _ in roster[:4] if cid in NAMES])
+            roster = [(cid, self._field_param(cid)) for cid, _ in roster]
+        if not any(param for _, param in roster[:4]):
+            self.hp_source = 'sin datos de HP/MP' + ('' if members else ' fuera de batalla')
 
         for slot, (char_id, param) in enumerate(roster[:4], 1):
             values[f'p{slot}_name'] = NAMES.get(char_id, f'ID {char_id}')
+            values[f'p{slot}_img'] = self.portraits.url(char_id, PORTRAIT_NAMES.get(char_id, ()))
             if char_id in exp:
                 values[f'p{slot}_lv'] = self._level(char_id, exp[char_id])
             if param is not None:
                 for key, value in self._hp_mp(param).items():
                     values[f'p{slot}_{key}'] = value
-        values['hp_source'] = self.hp_source
+        values['hp_source'] = self.hp_source if members else f'{self.hp_source} (experimental)'
         values['status'] = 'Lectura OK'
         return values
