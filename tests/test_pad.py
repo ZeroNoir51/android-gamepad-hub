@@ -43,7 +43,7 @@ def test_creacion(dev):
     assert len(setup) == 92
     bus, vendor, product, version, name, ff = struct.unpack('<4H80sI', setup)
     assert (bus, vendor, product, version) == (3, 0x045E, 0x028E, 0x0114)
-    assert name.rstrip(b'\0') == b'PS5 GamePad Virtual Xbox 360'
+    assert name.rstrip(b'\0') == b'GamePad Virtual Xbox 360'
     absinfo = {struct.unpack('<H2x6i', arg)[0]: struct.unpack('<H2x6i', arg)[1:]
                for req, arg in calls if req == pad.UI_ABS_SETUP}
     assert absinfo[0x00] == (0, -32768, 32767, 16, 128, 0)      # ABS_X

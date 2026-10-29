@@ -178,7 +178,7 @@ def test_id_cambiado_en_el_objeto(attach):
 # --- retratos ---
 
 def test_retratos_por_id_y_por_nombre(attach, data_home):
-    folder = data_home / 'ps5gamepad' / 'portraits' / 'ffrs'
+    folder = data_home / 'gamepad' / 'portraits' / 'ffrs'
     folder.mkdir(parents=True)
     (folder / '1001.webp').write_bytes(b'x')
     (folder / 'lasswell.png').write_bytes(b'x')
@@ -189,3 +189,44 @@ def test_retratos_por_id_y_por_nombre(attach, data_home):
     assert v['p2_img'] == '/portraits/ffrs/lasswell.png'
     assert v['p3_img'] == '/portraits/ffrs/dark_fina.png'
     assert v['p4_img'] is None                        # sin imagen: el cliente pone la inicial
+
+
+# --- curvas de nivel y diagnóstico ---
+
+def test_curvas_con_varias_tablas_del_mismo_tipo(attach):
+    # Antes se usaba la primera tabla UNIT_PARAMETER: si era la de enemigos, no salía ningún nivel
+    g = build_ffrs(party=(1001, 1002), enemy_table=True)
+    v = attach(g).read(g.mem)
+    assert v['p1_lv'] == 'Nv 5 · faltan 600 EXP'
+    assert v['dbg_curves'] == '8/8 personajes'
+
+
+def test_curvas_se_reintentan(attach):
+    from fake_ue import add_curves, level_table
+    g = build_ffrs(party=(1001,), curve_for=())
+    plugin = attach(g)
+    v = plugin.read(g.mem)
+    assert v.get('p1_lv') is None
+    assert v['dbg_curves'].startswith('0/8 personajes; falta 1001: curva 10001 sin lista')
+    add_curves(g, {10001: level_table(g)})            # la tabla aparece más tarde
+    assert plugin.read(g.mem).get('p1_lv') is None    # todavía dentro del límite
+    plugin.next_curve_try = 0
+    v = plugin.read(g.mem)
+    assert v['p1_lv'] == 'Nv 5 · faltan 600 EXP'
+    assert v['dbg_curves'].startswith('1/8 personajes')
+
+
+def test_sin_exp_en_la_partida(attach):
+    g = build_ffrs(party=(1001, 1002), units={1001: 0})
+    v = attach(g).read(g.mem)
+    assert v.get('p2_lv') is None
+    assert 'sin EXP en la partida para [1002]' in v['dbg_curves']
+
+
+def test_diagnostico_de_batalla(attach):
+    g = build_ffrs(party=(1001,))
+    v = attach(g).read(g.mem)
+    assert v['dbg_battle'] == 'sin CPP_BtlManager entre 1 subsistemas'
+    g = build_ffrs(party=(1001,), battle=[(1001, STATS[1001])])
+    v = attach(g).read(g.mem)
+    assert v['dbg_battle'] == '1 unidades, 1 CPP_BtlUnit, 1 con parámetros, 1 aliados; IDs [1001]'

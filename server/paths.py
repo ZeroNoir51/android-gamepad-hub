@@ -4,9 +4,9 @@ from pathlib import Path
 
 
 def runtime_dir():
-    """$XDG_RUNTIME_DIR/ps5gamepad: en RAM (tmpfs), privado (0700), se borra al cerrar sesión."""
+    """$XDG_RUNTIME_DIR/gamepad: en RAM (tmpfs), privado (0700), se borra al cerrar sesión."""
     base = os.environ.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}'
-    path = Path(base) / 'ps5gamepad'
+    path = Path(base) / 'gamepad'
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(path, 0o700)
     return path
@@ -17,10 +17,10 @@ def socket_path():
 
 
 def cache_dir():
-    """~/.cache/ps5gamepad: dentro de la carpeta personal, que el contenedor de Steam
+    """~/.cache/gamepad: dentro de la carpeta personal, que el contenedor de Steam
     (pressure-vessel) comparte con el juego. /run/user/... no siempre es visible ahí."""
     base = os.environ.get('XDG_CACHE_HOME') or str(Path.home() / '.cache')
-    path = Path(base) / 'ps5gamepad'
+    path = Path(base) / 'gamepad'
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     return path
 
@@ -33,15 +33,15 @@ def mangohud_dir():
 
 def state_dir():
     base = os.environ.get('XDG_STATE_HOME') or str(Path.home() / '.local' / 'state')
-    path = Path(base) / 'ps5gamepad'
+    path = Path(base) / 'gamepad'
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     return path
 
 
 def data_dir():
-    """~/.local/share/ps5gamepad: datos del usuario que sobreviven a cambiar de versión."""
+    """~/.local/share/gamepad: datos del usuario que sobreviven a cambiar de versión."""
     base = os.environ.get('XDG_DATA_HOME') or str(Path.home() / '.local' / 'share')
-    path = Path(base) / 'ps5gamepad'
+    path = Path(base) / 'gamepad'
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     return path
 

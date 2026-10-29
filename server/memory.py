@@ -85,7 +85,7 @@ class LinuxProcessMemory:
         except PermissionError as ex:
             raise PermissionError(
                 f'Sin permiso para leer la memoria del PID {pid}: el juego debe lanzarse con '
-                '`ps5gamepad run %command%` para ser descendiente del lector (ver README).') from ex
+                '`gamepad run %command%` para ser descendiente del lector (ver README).') from ex
 
     def alive(self):
         try:

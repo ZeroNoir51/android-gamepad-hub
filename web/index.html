@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#15171c">
-<title>PS5 GamePad Hub</title>
+<title>GamePad Hub</title>
 <style>
 :root{
   --bg:#15171c; --panel:#1d2027; --line:#2b2f39; --text:#ebe7dd; --muted:#8c919c;
@@ -109,6 +109,26 @@ body.touchmode .touch{display:flex}
 .b.on{background:var(--amber);color:#1a1408;border-color:var(--amber)}
 .center{display:flex;gap:8px}
 
+/* remapeo */
+.remap{position:fixed;inset:0;background:var(--bg);display:none;flex-direction:column;gap:10px;z-index:5;
+  padding:calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 12px)}
+body.remapmode .remap{display:flex}
+.rmhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.rmhead h1{margin:2px 0 0;font:600 22px/1.25 var(--ui);color:var(--amber)}
+.rmstep{color:var(--muted);font-size:13px}
+.rmmsg{color:var(--text);font-size:14px;min-height:1.4em;margin-top:4px}
+.rmbtns{display:flex;gap:8px;flex:none}
+.rmbtns .go{padding:6px 16px;font-size:15px}
+.rmlist{flex:1;min-height:0;overflow:auto;margin:0;padding:0;list-style:none;display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:2px 16px;align-content:start;font-size:13.5px}
+.rmlist li{display:flex;justify-content:space-between;gap:8px;padding:4px 6px;border-radius:4px;color:var(--muted)}
+.rmlist li b{color:var(--text);font-weight:500;font-family:var(--num)}
+.rmlist li.cur{background:var(--panel);color:var(--text)}
+.rmfoot{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tbtn[aria-pressed="true"]{border-color:var(--cyan);color:var(--cyan)}
+/* debug: el diagnóstico del plugin solo se ve con el toggle */
+body:not(.debug) #ginfo{display:none}
+
 /* acceso */
 .login{position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;padding:20px;z-index:10}
 body.locked .login{display:flex}
@@ -139,7 +159,9 @@ body.locked .login{display:flex}
   <span class="conn" id="conn">Sin conexión</span>
   <span class="spacer"></span>
   <span class="rtt num" id="rtt" title="Ida y vuelta por Wi-Fi">— ms</span>
-  <button class="tbtn" id="touchBtn">Mando táctil</button>
+  <button class="tbtn" id="debugBtn" aria-pressed="false" title="Mostrar datos de diagnóstico">Debug</button>
+  <button class="tbtn" id="remapBtn">Remapear</button>
+  <button class="tbtn" id="touchBtn">Táctil</button>
 </header>
 
 <main class="main">
@@ -172,6 +194,23 @@ body.locked .login{display:flex}
 </main>
 
 <footer class="foot" id="foot">Pulsa un botón del mando para detectarlo.</footer>
+
+<div class="remap" id="remap" role="dialog" aria-label="Remapear mando">
+  <div class="rmhead">
+    <div><div class="rmstep" id="rmStep"></div><h1 id="rmPrompt"></h1><div class="rmmsg" id="rmMsg" role="status"></div></div>
+    <div class="rmbtns">
+      <button class="tbtn" id="rmSkip">Omitir</button>
+      <button class="go" id="rmSave" hidden>Guardar</button>
+    </div>
+  </div>
+  <ol class="rmlist" id="rmList"></ol>
+  <div class="rmfoot">
+    <button class="tbtn" id="rmRestart">Empezar de nuevo</button>
+    <button class="tbtn" id="rmDefault">Volver al mapeo por defecto</button>
+    <span class="spacer"></span>
+    <button class="tbtn" id="rmCancel">Cancelar</button>
+  </div>
+</div>
 
 <div class="touch" id="touch">
   <div class="trow">
@@ -298,36 +337,153 @@ function sendInput(force) {
 }
 function neutral() { for (const k of KEYS) state[k] = 0; sendInput(true); }
 
-const STD = {a:0,b:1,x:2,y:3,lb:4,rb:5,back:8,start:9,ls:10,rs:11,guide:16};
+/* Mapeo: cada control Xbox lee de un botón {b} o de medio eje {a, s: ±1, r: reposo}.
+   Por defecto, el mapeo estándar de la Gamepad API; se puede rehacer con "Remapear". */
+const DEFAULT_MAP = {a:{b:0}, b:{b:1}, x:{b:2}, y:{b:3}, lb:{b:4}, rb:{b:5}, lt:{b:6}, rt:{b:7},
+  back:{b:8}, start:{b:9}, ls:{b:10}, rs:{b:11}, up:{b:12}, down:{b:13}, left:{b:14}, right:{b:15}, guide:{b:16},
+  lx:{a:0,s:1}, ly:{a:1,s:1}, rx:{a:2,s:1}, ry:{a:3,s:1}};
+const DIGITAL = ['a','b','x','y','lb','rb','back','start','guide','ls','rs'];
 const btn = (g, i) => g.buttons[i]?.value || 0;
-const axis = (g, i) => { const v = g.axes[i] || 0; return Math.abs(v) < 0.08 ? 0 : v; };
+const rawAxis = (g, i) => g.axes[i] || 0;
+const dead = v => Math.abs(v) < 0.08 ? 0 : v;
 const stickInt = v => Math.max(-32768, Math.min(32767, Math.round(v * 32767)));
-let padId = '';
+const clamp01 = v => Math.max(0, Math.min(1, v));
+let padId = '', padMap = DEFAULT_MAP, padCustom = false;
 
-function pollGamepad() {
+function storeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function storeSet(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} }
+function loadMap(id) {
+  try { const m = JSON.parse(storeGet('remap:' + id)); if (m && typeof m === 'object') return m; } catch {}
+  return null;
+}
+// valor 0..1 de un control desde su fuente
+function srcValue(g, src) {
+  if (!src) return 0;
+  if (src.b != null) return btn(g, src.b);
+  const r = src.r || 0, v = rawAxis(g, src.a);
+  return clamp01((v - r) / (src.s - r));          // reposo r -> 0, extremo s (±1) -> 1
+}
+const pressed = (g, src) => srcValue(g, src) > 0.5;
+function stick(g, src) {
+  if (!src) return 0;
+  if (src.b != null) return btn(g, src.b) > .5 ? 1 : 0;
+  return dead(rawAxis(g, src.a)) * src.s;
+}
+
+function padStatus(g) {
+  const note = padCustom ? ' · mapeo personalizado' :
+    (g.mapping === 'standard' ? '' : ' · mapeo no estándar: usa "Remapear" si algún botón no corresponde');
+  foot(`Mando: ${g.id}${note}`, !padCustom && g.mapping !== 'standard');
+}
+
+function currentPad() {
   if (typeof navigator.getGamepads !== 'function') {
     foot(window.isSecureContext ? 'Este navegador no ofrece la Gamepad API.' :
       'El navegador bloquea el mando físico en http://. Ver README: flag de Chrome o APK.', true);
-    return;
+    return null;
   }
-  let g;
-  try { g = Array.from(navigator.getGamepads()).find(Boolean); }
-  catch (e) { foot('Gamepad API bloqueada: ' + e.message, true); return; }
+  try { return Array.from(navigator.getGamepads()).find(Boolean) || null; }
+  catch (e) { foot('Gamepad API bloqueada: ' + e.message, true); return null; }
+}
+
+function pollGamepad() {
+  const g = currentPad();
   if (!g) { if (padId) { padId = ''; neutral(); } foot('Pulsa un botón del mando para detectarlo.'); return; }
   if (g.id !== padId) {
     padId = g.id;
-    foot(`Mando: ${g.id}` + (g.mapping === 'standard' ? '' : ' · mapeo no estándar, hay que calibrar'), g.mapping !== 'standard');
+    const saved = loadMap(g.id);
+    padMap = saved || DEFAULT_MAP; padCustom = !!saved;
+    padStatus(g);
   }
-  for (const [k, i] of Object.entries(STD)) state[k] = btn(g, i) > 0.5 ? 1 : 0;
-  state.lt = Math.round(btn(g, 6) * 255); state.rt = Math.round(btn(g, 7) * 255);
-  state.lx = stickInt(axis(g, 0)); state.ly = stickInt(axis(g, 1));
-  state.rx = stickInt(axis(g, 2)); state.ry = stickInt(axis(g, 3));
-  state.dx = (btn(g, 15) > .5) - (btn(g, 14) > .5);
-  state.dy = (btn(g, 13) > .5) - (btn(g, 12) > .5);
+  const m = padMap;
+  for (const k of DIGITAL) state[k] = pressed(g, m[k]) ? 1 : 0;
+  state.lt = Math.round(srcValue(g, m.lt) * 255); state.rt = Math.round(srcValue(g, m.rt) * 255);
+  state.lx = stickInt(stick(g, m.lx)); state.ly = stickInt(stick(g, m.ly));
+  state.rx = stickInt(stick(g, m.rx)); state.ry = stickInt(stick(g, m.ry));
+  state.dx = pressed(g, m.right) - pressed(g, m.left);
+  state.dy = pressed(g, m.down) - pressed(g, m.up);
 }
+
+/* ---------- remapeo ---------- */
+const REMAP_STEPS = [
+  ['a', 'A (botón de abajo)'], ['b', 'B (botón de la derecha)'], ['x', 'X (botón de la izquierda)'],
+  ['y', 'Y (botón de arriba)'], ['up', 'Cruceta ↑'], ['down', 'Cruceta ↓'], ['left', 'Cruceta ←'],
+  ['right', 'Cruceta →'], ['lb', 'LB (bumper izquierdo)'], ['rb', 'RB (bumper derecho)'],
+  ['lt', 'LT (gatillo izquierdo), hasta el fondo'], ['rt', 'RT (gatillo derecho), hasta el fondo'],
+  ['back', 'Back / Select / View'], ['start', 'Start / Menu'], ['guide', 'Guide / Home (si existe)'],
+  ['ls', 'L3 (hundir el stick izquierdo)'], ['rs', 'R3 (hundir el stick derecho)'],
+  ['lx', 'Stick izquierdo hacia la DERECHA'], ['ly', 'Stick izquierdo hacia ABAJO'],
+  ['rx', 'Stick derecho hacia la DERECHA'], ['ry', 'Stick derecho hacia ABAJO'],
+];
+const remap = {step: 0, map: null, base: null, waitRelease: false};
+
+function snapshot(g) { return {b: g.buttons.map(x => x.value || 0), a: g.axes.slice()}; }
+function detect(g, base) {
+  for (let i = 0; i < g.buttons.length; i++)
+    if (btn(g, i) > 0.6 && (base.b[i] || 0) < 0.3) return {b: i};
+  let best = null, bestD = 0.6;
+  for (let i = 0; i < g.axes.length; i++) {
+    const d = rawAxis(g, i) - (base.a[i] || 0);
+    if (Math.abs(d) > bestD) { bestD = Math.abs(d); best = i; }
+  }
+  if (best == null) return null;
+  const r = Math.round((base.a[best] || 0) * 2) / 2;  // reposo: -1, -0.5, 0, 0.5 o 1
+  return {a: best, s: rawAxis(g, best) > (base.a[best] || 0) ? 1 : -1, r: Math.abs(r) < 0.75 ? 0 : r};
+}
+function released(g, base) {
+  return g.buttons.every((x, i) => (x.value || 0) < 0.3 || (base.b[i] || 0) >= 0.3) &&
+         g.axes.every((v, i) => Math.abs(v - (base.a[i] || 0)) < 0.3);
+}
+function describe(src) {
+  if (!src) return '—';
+  return src.b != null ? `botón ${src.b}` : `eje ${src.a} ${src.s > 0 ? '+' : '−'}`;
+}
+function remapRender(msg) {
+  const done = remap.step >= REMAP_STEPS.length;
+  $('#rmPrompt').textContent = done ? 'Listo. Guarda o vuelve a empezar.' : REMAP_STEPS[remap.step][1];
+  $('#rmStep').textContent = done ? '' : `Paso ${remap.step + 1} de ${REMAP_STEPS.length}`;
+  $('#rmMsg').textContent = msg || '';
+  $('#rmSave').hidden = !done; $('#rmSkip').hidden = done;
+  $('#rmList').innerHTML = REMAP_STEPS.map(([k, label], i) =>
+    `<li class="${i === remap.step ? 'cur' : ''}"><span>${esc(label.split(' (')[0])}</span><b>${esc(describe(remap.map[k]))}</b></li>`).join('');
+}
+function openRemap() {
+  const g = currentPad();
+  if (!g) { foot('Conecta o pulsa un botón del mando antes de remapear.', true); return; }
+  setMode('remap');
+  remap.step = 0; remap.map = {}; remap.base = snapshot(g); remap.waitRelease = true;
+  remapRender('Suelta todos los controles…');
+}
+function remapTick() {
+  const g = currentPad();
+  if (!g) { remapRender('Mando desconectado.'); return; }
+  if (remap.step >= REMAP_STEPS.length) return;
+  if (remap.waitRelease) {
+    if (released(g, remap.base)) { remap.waitRelease = false; remapRender(); }
+    return;
+  }
+  const src = detect(g, remap.base);
+  if (!src) return;
+  const [key, label] = REMAP_STEPS[remap.step];
+  remap.map[key] = src; remap.step++; remap.waitRelease = true;
+  remapRender(`${label.split(' (')[0]} → ${describe(src)}. Suelta…`);
+}
+$('#remapBtn').onclick = openRemap;
+$('#rmSkip').onclick = () => { remap.step++; remap.waitRelease = true; remapRender('Omitido.'); };
+$('#rmRestart').onclick = openRemap;
+$('#rmCancel').onclick = () => setMode('physical');
+$('#rmDefault').onclick = () => {
+  storeSet('remap:' + padId, null); padId = ''; setMode('physical');   // se recarga al detectar el mando
+};
+$('#rmSave').onclick = () => {
+  const g = currentPad();
+  if (g) storeSet('remap:' + g.id, JSON.stringify(remap.map));
+  padId = ''; setMode('physical');
+};
 
 function frame() {
   if (mode === 'physical') pollGamepad();
+  else if (mode === 'remap') remapTick();   // mientras se remapea, el PC no recibe nada
   sendInput(false);
   requestAnimationFrame(frame);   // se pausa con la pestaña oculta => el servidor suelta los controles
 }
@@ -336,7 +492,12 @@ window.addEventListener('blur', neutral);
 document.addEventListener('visibilitychange', () => { if (document.hidden) neutral(); });
 
 /* ---------- mando táctil ---------- */
-function setMode(m) { mode = m; document.body.classList.toggle('touchmode', m === 'touch'); neutral(); }
+function setMode(m) {
+  mode = m;
+  document.body.classList.toggle('touchmode', m === 'touch');
+  document.body.classList.toggle('remapmode', m === 'remap');
+  neutral();
+}
 $('#touchBtn').onclick = () => setMode('touch');
 $('#closeTouch').onclick = () => setMode('physical');
 
@@ -423,6 +584,15 @@ function drawChart() {
   ctx.stroke();
 }
 addEventListener('resize', drawChart);
+
+/* ---------- debug ---------- */
+function setDebug(on) {
+  document.body.classList.toggle('debug', on);
+  $('#debugBtn').setAttribute('aria-pressed', String(on));
+  storeSet('debug', on ? '1' : null);
+}
+$('#debugBtn').onclick = () => setDebug(!document.body.classList.contains('debug'));
+setDebug(storeGet('debug') === '1');
 
 /* ---------- juego ---------- */
 let gFields = [];

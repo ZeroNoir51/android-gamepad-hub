@@ -1,10 +1,10 @@
-"""Punto de entrada: `ps5gamepad serve` (servicio) y `ps5gamepad run %command%` (lanzador)."""
+"""Punto de entrada: `gamepad serve` (servicio) y `gamepad run %command%` (lanzador)."""
 import sys
 from pathlib import Path
 
 USAGE = '''Uso:
-  ps5gamepad serve [opciones]     servicio permanente: mando, telemetría y web (sin root)
-  ps5gamepad run %command%        opción de lanzamiento de Steam: lanza el juego y lee sus datos
+  gamepad serve [opciones]     servicio permanente: mando, telemetría y web (sin root)
+  gamepad run %command%        opción de lanzamiento de Steam: lanza el juego y lee sus datos
 '''
 
 

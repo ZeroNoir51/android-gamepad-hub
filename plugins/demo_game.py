@@ -5,7 +5,7 @@ from pathlib import Path
 from server.memory import MemoryReadError
 from server.plugins import Field, GamePlugin
 
-INFO = Path('/tmp/ps5-gamepad-demo.json')
+INFO = Path('/tmp/gamepad-demo.json')
 MAGIC = 0x42444847
 
 

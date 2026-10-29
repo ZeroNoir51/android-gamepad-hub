@@ -1,0 +1,11 @@
+[Unit]
+Description=GamePad Hub (mando, telemetría y web para Android)
+
+[Service]
+ExecStart=%h/.local/bin/gamepad serve --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

@@ -5,7 +5,7 @@ import os
 import secrets
 import time
 
-COOKIE = 'ps5gp_session'
+COOKIE = 'gamepad_session'
 SESSION_TTL = 24 * 3600
 
 

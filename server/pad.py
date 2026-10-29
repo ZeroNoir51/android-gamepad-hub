@@ -53,7 +53,7 @@ EVENT = struct.Struct('llHHi')         # struct input_event (timeval nativo; el 
 
 
 class UInputPad:
-    name = 'PS5 GamePad Virtual Xbox 360'
+    name = 'GamePad Virtual Xbox 360'
 
     def __init__(self, path='/dev/uinput'):
         self.fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK)

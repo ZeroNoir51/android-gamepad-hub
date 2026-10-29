@@ -1,6 +1,6 @@
 """Retratos por plugin: imágenes que pone el usuario, nunca arte incluido en el proyecto.
 
-Carpeta: ~/.local/share/ps5gamepad/portraits/<plugin>/  (fuera de la carpeta del
+Carpeta: ~/.local/share/gamepad/portraits/<plugin>/  (fuera de la carpeta del
 proyecto, así no se pierden al descomprimir otra versión). Cada plugin decide qué
 nombres acepta por personaje (p. ej. 1001.png o rain.png).
 

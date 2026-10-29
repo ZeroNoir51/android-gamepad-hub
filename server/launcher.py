@@ -1,4 +1,4 @@
-"""`ps5gamepad run %command%`: lanza el juego como hijo y lee su memoria sin root.
+"""`gamepad run %command%`: lanza el juego como hijo y lee su memoria sin root.
 
 - Activa los logs de MangoHud en una carpeta en RAM y los borra al salir.
 - Ejecuta los plugins solo sobre sus propios descendientes (ptrace_scope=1 lo permite).
@@ -34,7 +34,7 @@ def mangohud_env(env, log_dir):
         for line in source.read_text(errors='replace').splitlines():
             if line.split('=', 1)[0].strip() not in LOG_KEYS:
                 lines.append(line)
-    lines += ['', '# añadido por ps5gamepad'] + [f'{k}={v}' for k, v in options.items()]
+    lines += ['', '# añadido por gamepad'] + [f'{k}={v}' for k, v in options.items()]
     target = paths.cache_dir() / 'mangohud.conf'
     target.write_text('\n'.join(lines) + '\n')
     env['MANGOHUD_CONFIGFILE'] = str(target)
@@ -139,7 +139,7 @@ def main(argv):
     if argv and argv[0] == '--':
         argv = argv[1:]
     if not argv:
-        print('Uso: ps5gamepad run %command%', file=sys.stderr)
+        print('Uso: gamepad run %command%', file=sys.stderr)
         return 2
     # Nuestros mensajes van a un log; la salida estándar original queda para el juego.
     try:

@@ -1,4 +1,4 @@
-# PS5 GamePad Hub v0.4.5
+# GamePad Hub 0.1
 
 Android (navegador hoy, APK después) → Wi-Fi local → PC Linux: mando virtual, telemetría (FPS, frametimes, CPU/GPU, RAM, latencia) y datos del juego leídos de memoria. **Nada se ejecuta como root.**
 
@@ -6,21 +6,28 @@ Android (navegador hoy, APK después) → Wi-Fi local → PC Linux: mando virtua
 
 | Proceso | Qué hace | Qué no puede hacer |
 |---|---|---|
-| `ps5gamepad serve` (servicio permanente) | mando virtual, telemetría, web y WebSocket en el puerto 8080 | leer la memoria de ningún juego |
-| `ps5gamepad run %command%` (lo lanza Steam) | lanza el juego como hijo, activa los logs de MangoHud y ejecuta el plugin | abrir puertos de red |
+| `gamepad serve` (servicio permanente) | mando virtual, telemetría, web y WebSocket en el puerto 8080 | leer la memoria de ningún juego |
+| `gamepad run %command%` (lo lanza Steam) | lanza el juego como hijo, activa los logs de MangoHud y ejecuta el plugin | abrir puertos de red |
 
-Linux (con `kernel.yama.ptrace_scope=1`, el valor de Ubuntu) solo deja leer la memoria de un proceso a su ancestro. Como el lanzador es el padre del juego, puede leerlo sin root. El servicio que da la cara a la red no tiene ese poder. Los dos se comunican por un socket Unix privado (`$XDG_RUNTIME_DIR/ps5gamepad/hub.sock`, permisos 0600).
+Linux (con `kernel.yama.ptrace_scope=1`, el valor de Ubuntu) solo deja leer la memoria de un proceso a su ancestro. Como el lanzador es el padre del juego, puede leerlo sin root. El servicio que da la cara a la red no tiene ese poder. Los dos se comunican por un socket Unix privado (`$XDG_RUNTIME_DIR/gamepad/hub.sock`, permisos 0600).
 
 ## Instalación (con tu usuario, sin sudo)
 
+El proyecto vive siempre en la misma carpeta, `~/proyectos/gamepad`, y los zips se llaman `gamepad-<versión>.zip` y se descomprimen en ella. Así la ruta del comando no cambia entre versiones.
+
 ```
-cd ps5-gamepad-v0.4.5
-sh tools/install.sh
+cd ~/proyectos && unzip -o gamepad-0.1.zip
+cd gamepad && sh tools/install.sh
+systemctl --user enable --now gamepad
 ```
+
+Para actualizar: `unzip -o` del zip nuevo en `~/proyectos`, `sh tools/install.sh` y `systemctl --user restart gamepad`.
 
 Solo necesita Python 3 y `aiohttp` (sin compilar nada: el mando virtual habla con `/dev/uinput` directamente). Funciona igual en sistemas inmutables como Bazzite.
 
-Crea `~/.local/bin/ps5gamepad` y el servicio de usuario `ps5gamepad`, y te dice si tu usuario ya puede crear el mando virtual.
+Crea `~/.local/bin/gamepad` y el servicio de usuario `gamepad`, y te dice si tu usuario ya puede crear el mando virtual.
+
+**Si vienes de `ps5gamepad` (hasta la v0.4.5):** `install.sh` detiene y quita el servicio antiguo, mueve los retratos a `~/.local/share/gamepad/portraits/` y deja `~/.local/bin/ps5gamepad` como alias del comando nuevo, para que el juego siga arrancando hasta que cambies la opción de Steam a `gamepad run mangohud %command%`. La sesión de Android se pide de nuevo una vez.
 
 Si vienes de la v0.3 (que corría con sudo), detén ese servidor y quita de `~/.config/MangoHud/MangoHud.conf` las líneas `output_folder`, `autostart_log`, `log_interval` y `log_duration`: el lanzador ahora las pone por ti.
 
@@ -31,7 +38,7 @@ El paquete de Steam suele instalar reglas udev que dan acceso a `/dev/uinput` al
 ```
 sudo groupadd -f uinput
 sudo usermod -aG uinput $USER
-echo 'KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="uinput", MODE="0660", OPTIONS+="static_node=uinput"' | sudo tee /etc/udev/rules.d/60-ps5-gamepad-uinput.rules
+echo 'KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="uinput", MODE="0660", OPTIONS+="static_node=uinput"' | sudo tee /etc/udev/rules.d/60-gamepad-uinput.rules
 echo uinput | sudo tee /etc/modules-load.d/uinput.conf
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
@@ -59,21 +66,27 @@ No desactives firewalld para salir del paso.
 
 ## Uso
 
-1. Servicio: `systemctl --user start ps5gamepad` (y `enable` para que arranque al iniciar sesión).
-2. Código de acceso: `journalctl --user -u ps5gamepad -n 20`.
+1. Servicio: `systemctl --user start gamepad` (y `enable` para que arranque al iniciar sesión).
+2. Código de acceso: `journalctl --user -u gamepad -n 20`.
 3. Android: abre `http://IP-DEL-PC:8080` y escribe el código. La sesión dura 24 h.
 4. Steam, propiedades del juego, opciones de lanzamiento (ruta absoluta, cambia TU_USUARIO):
    ```
-   /home/TU_USUARIO/.local/bin/ps5gamepad run mangohud %command%
+   /home/TU_USUARIO/.local/bin/gamepad run mangohud %command%
    ```
 
-Si el juego no muestra datos, el registro del lanzador está en `$XDG_RUNTIME_DIR/ps5gamepad/launcher.log` (normalmente `/run/user/1000/ps5gamepad/launcher.log`).
+Si el juego no muestra datos, el registro del lanzador está en `$XDG_RUNTIME_DIR/gamepad/launcher.log` (normalmente `/run/user/1000/gamepad/launcher.log`).
 
-Para probar sin juego real: `ps5gamepad run python3 tools/demo_game.py`.
+Para probar sin juego real: `gamepad run python3 tools/demo_game.py`.
+
+### En el cliente (Android)
+
+- **Remapear:** si algún botón del mando físico no corresponde (el navegador lo marca como "mapeo no estándar"), pulsa *Remapear* y sigue los pasos: pulsa cada botón, gatillo o dirección que se pide. Lo que no exista se omite. El mapeo se guarda en ese navegador, por mando; *Volver al mapeo por defecto* lo borra. Mientras remapeas, el PC no recibe ninguna pulsación.
+- **Debug:** muestra u oculta el panel de diagnóstico del plugin (estado, origen de HP/MP, mapa, ejecutable, diagnóstico de batalla y de curvas de nivel). Se recuerda en ese navegador.
+- **Táctil:** mando en pantalla, por si no hay mando físico.
 
 ## FPS, frametimes y tamaño del log
 
-El lanzador añade a tu configuración de MangoHud (sin tocar tu archivo) las opciones de log, con una fila por frame. El log y la configuración generada van a `~/.cache/ps5gamepad/` (privado, 0700). Tiene que estar dentro de tu carpeta personal: los juegos de Proton corren en el contenedor de Steam, que comparte tu carpeta personal pero no `/run/user/...`. Para que no crezca:
+El lanzador añade a tu configuración de MangoHud (sin tocar tu archivo) las opciones de log, con una fila por frame. El log y la configuración generada van a `~/.cache/gamepad/` (privado, 0700). Tiene que estar dentro de tu carpeta personal: los juegos de Proton corren en el contenedor de Steam, que comparte tu carpeta personal pero no `/run/user/...`. Para que no crezca:
 
 - el servicio libera cada 4 MB la parte del archivo ya leída (el archivo conserva su tamaño aparente, pero deja de ocupar memoria);
 - el lanzador borra el log al cerrar el juego, y también los de más de un día.
@@ -88,7 +101,7 @@ Cada campo declara dónde se muestra en Android con `section`:
 
 - `party`: tarjetas por miembro (`slot` 1-4) con nombre, HP y MP;
 - `stats`: números grandes (Gil, EXP);
-- `info`: texto pequeño de diagnóstico.
+- `info`: texto pequeño de diagnóstico (solo se ve con *Debug* activado).
 
 Si no hay juego con plugin, el panel derecho desaparece y la telemetría ocupa toda la pantalla.
 
@@ -113,7 +126,7 @@ Solo para la build 24250053 de Steam: comprueba la cabecera PE del ejecutable (t
 No se incluye arte del juego: pones tus propias imágenes en
 
 ```
-~/.local/share/ps5gamepad/portraits/ffrs/
+~/.local/share/gamepad/portraits/ffrs/
 ```
 
 Está fuera de la carpeta del proyecto, así no se pierden al descomprimir otra versión. Formatos: `png`, `jpg`, `jpeg`, `webp` (SVG no). Se aceptan dos nombres por personaje: el ID o el nombre en minúsculas.
@@ -152,7 +165,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 - El servicio web no puede leer memoria de juegos; el lector no abre puertos.
 - Solo red local de confianza, sin cifrado. No abras el puerto en el router ni en túneles.
 - Código de 4 letras con bloqueo de 60 s tras 5 fallos; cookie de 24 h `HttpOnly` y `SameSite=Strict`; el WebSocket rechaza otros orígenes; un solo cliente a la vez.
-- Para cerrar todas las sesiones: borra `~/.local/state/ps5gamepad/sessions.json` y reinicia el servicio.
+- Para cerrar todas las sesiones: borra `~/.local/state/gamepad/sessions.json` y reinicia el servicio.
 
 ## Protocolo
 
@@ -164,7 +177,7 @@ Lanzador → servicio: líneas JSON por el socket Unix, solo de tipo `game` y `g
 
 ```
 server/
-  cli.py        ps5gamepad serve | run
+  cli.py        gamepad serve | run
   main.py       servicio: HTTP, WebSocket, watchdog, telemetría, socket puente
   launcher.py   lanzador: juego hijo, MangoHud, plugins, puente
   auth.py       código de acceso y sesiones
@@ -177,6 +190,6 @@ server/
   portraits.py  retratos del usuario: búsqueda y validación de rutas
 plugins/        ffrs.py, demo_game.py, _template.py
 tests/          arnés de memoria UE5 sintética y tests (pytest)
-tools/          install.sh, ps5gamepad.service, demo_game.py
+tools/          install.sh, gamepad.service, demo_game.py
 web/index.html  cliente Android
 ```

@@ -1,7 +1,7 @@
-"""`ps5gamepad serve`: servicio permanente sin root.
+"""`gamepad serve`: servicio permanente sin root.
 
 WebSocket LAN -> mando virtual + telemetría. Los datos de juego llegan del
-lanzador (`ps5gamepad run`) por un socket Unix privado; este proceso no puede
+lanzador (`gamepad run`) por un socket Unix privado; este proceso no puede
 leer la memoria de ningún juego.
 """
 import argparse
@@ -47,7 +47,7 @@ class Hub:
 
 
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(prog='ps5gamepad serve', description='PS5 GamePad Hub')
+    p = argparse.ArgumentParser(prog='gamepad serve', description='GamePad Hub')
     p.add_argument('--host', default='0.0.0.0')
     p.add_argument('--port', type=int, default=8080)
     p.add_argument('--token', help='4 letras A-Z (si no, aleatorio)')
@@ -55,7 +55,7 @@ def parse_args(argv=None):
                    help='null = sin mando virtual (probar telemetría)')
     p.add_argument('--telemetry-hz', type=float, default=4.0)
     p.add_argument('--mangohud-dir', default=None,
-                   help='carpeta de logs de MangoHud (por defecto la misma que usa `ps5gamepad run`)')
+                   help='carpeta de logs de MangoHud (por defecto la misma que usa `gamepad run`)')
     p.add_argument('--sessions-file', default=None)
     args = p.parse_args(argv)
     if args.token is not None:
@@ -68,7 +68,7 @@ def parse_args(argv=None):
 def main(argv=None):
     args = parse_args(argv)
     if os.geteuid() == 0:
-        print('AVISO: no hace falta root. Ejecuta `ps5gamepad serve` con tu usuario (ver README).', flush=True)
+        print('AVISO: no hace falta root. Ejecuta `gamepad serve` con tu usuario (ver README).', flush=True)
     token = args.token or ''.join(secrets.choice(string.ascii_uppercase) for _ in range(4))
     mangohud_dir = args.mangohud_dir or str(paths.mangohud_dir())
     sessions_file = args.sessions_file or str(paths.state_dir() / 'sessions.json')
@@ -267,7 +267,7 @@ def main(argv=None):
     app.router.add_get('/portraits/{plugin}/{name}', portrait)
     app.cleanup_ctx.append(lifetime)
 
-    print(f'PS5 GamePad Hub {VERSION} · mando: {pad.name}', flush=True)
+    print(f'GamePad Hub {VERSION} · mando: {pad.name}', flush=True)
     print(f'Abre en Android: http://<IP-LAN>:{args.port}', flush=True)
     print(f'Código de acceso: {token}   (la sesión dura 24 h)', flush=True)
     print('Solo red local de confianza: sin cifrado. No expongas el puerto a Internet.', flush=True)

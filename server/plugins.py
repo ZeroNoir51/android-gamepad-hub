@@ -1,6 +1,6 @@
 """Plugins por juego: detectan el proceso y leen sus valores de memoria.
 
-Los ejecuta el lanzador (`ps5gamepad run`), que es el proceso padre del juego:
+Los ejecuta el lanzador (`gamepad run`), que es el proceso padre del juego:
 por eso el kernel le permite leer su memoria sin root.
 
 Un plugin es un archivo plugins/<algo>.py que define `class Plugin(GamePlugin)`.

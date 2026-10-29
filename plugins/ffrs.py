@@ -25,7 +25,7 @@ puede llamar funciones. En su lugar se escanean los objetos CPP_UnitParameter
 (clase base de CPP_BtlUnitParameter, según los `isa` de la tabla) y se usa uno solo
 si es el único con ese ID en +0xD0. Su reflexión solo puede exigir 0xD0.
 
-Retratos: imágenes del propio usuario en ~/.local/share/ps5gamepad/portraits/ffrs/
+Retratos: imágenes del propio usuario en ~/.local/share/gamepad/portraits/ffrs/
 (ver server/portraits.py). No se incluye arte del juego.
 
 La EXP para el siguiente nivel se deriva de las curvas; compárala con el menú.
@@ -69,6 +69,7 @@ NUMERIC = {'IntProperty': 'i32', 'UInt32Property': 'u32', 'FloatProperty': 'f32'
            'Int64Property': 'i64', 'DoubleProperty': 'f64', 'Int16Property': 'i16'}
 RESCAN_EVERY = 10.0         # s; solo mientras no hay partida (en el título)
 PARAM_RESCAN_EVERY = 15.0   # s; CPP_UnitParameter de fuera de batalla, si falta alguno
+CURVE_RETRY_EVERY = 30.0    # s; curvas de nivel, si aún no se pudieron leer
 
 
 def _party_fields():
@@ -100,6 +101,8 @@ class Plugin(GamePlugin):
         Field('hp_source', 'Origen HP/MP', kind='text', section='info'),
         Field('world', 'Mapa', kind='text', section='info'),
         Field('build', 'Ejecutable', kind='text', section='info'),
+        Field('dbg_battle', 'Diag. batalla', kind='text', section='info'),
+        Field('dbg_curves', 'Diag. curvas', kind='text', section='info'),
     ]
 
     # --- enganche ---
@@ -110,7 +113,11 @@ class Plugin(GamePlugin):
         self.build = f"0x{pe['timestamp']:08X} / {pe['image_size']}" + ('' if self.build_ok else ' (build distinta)')
         self.ue = UEReader(mem, self.base, **UE_RVA) if self.build_ok else None
         self.manager = None
-        self.curves = None           # {id de personaje: [EXP acumulada para nivel 1..99]}
+        self.curves = {}             # {id de personaje: [EXP acumulada para nivel 1..99]}
+        self.curves_diag = 'sin leer'
+        self.next_curve_try = 0.0
+        self.battle_diag = ''
+        self.logged_subsystems = False
         self.next_scan = 0.0
         self.hp_offsets = {}         # {clase: ({'hp': (offset, tipo), ...}, descripción)}
         self.field_params = {}       # {id de personaje: CPP_UnitParameter} fuera de batalla
@@ -131,40 +138,71 @@ class Plugin(GamePlugin):
             return None
         self._set_field_params(found['CPP_UnitParameter'])
         self.next_param_scan = time.monotonic() + PARAM_RESCAN_EVERY
-        if self.curves is None:
-            try:
-                self.curves = self._load_curves(found['DataTable'])
-            except (MemoryReadError, KeyError) as ex:
-                self.curves = {}
-                print(f'[ffrs] no se pudieron leer las curvas de nivel: {ex!r}', flush=True)
+        self._try_curves(found['DataTable'])
         return managers[0]
 
+    def _try_curves(self, tables=None):
+        """Carga las curvas; si faltan, se reintenta más tarde (las tablas pueden cargarse después)."""
+        self.next_curve_try = time.monotonic() + CURVE_RETRY_EVERY
+        try:
+            if tables is None:
+                tables = self.ue.scan({'DataTable'})['DataTable']
+            self.curves = self._load_curves(tables)
+        except MemoryReadError as ex:
+            self.curves_diag = f'error: {ex}'
+            print(f'[ffrs] no se pudieron leer las curvas de nivel: {ex!r}', flush=True)
+
+    def _merged_rows(self, by_struct, struct, key_off, read_value):
+        """{clave: valor} juntando TODAS las tablas con ese RowStruct (puede haber varias,
+        p. ej. una de enemigos). Una clave con valores distintos en dos tablas se descarta."""
+        out, conflict, rows = {}, set(), 0
+        for table in by_struct.get(struct, ()):
+            try:
+                entries = self.ue.table_rows(table, struct)
+            except MemoryReadError:
+                continue
+            for _, row in entries:
+                key, value = self.ue.mem.i32(row + key_off), read_value(row)
+                rows += 1
+                if key in out and out[key] != value:
+                    conflict.add(key)
+                out.setdefault(key, value)
+        for key in conflict:
+            del out[key]
+        print(f'[ffrs] {struct}: {len(by_struct.get(struct, ()))} tabla(s), {rows} filas'
+              + (f', claves en conflicto {sorted(conflict)[:10]}' if conflict else ''), flush=True)
+        return out
+
     def _load_curves(self, tables):
-        ue = self.ue
+        ue, mem = self.ue, self.ue.mem
         by_struct = {}
         for t in tables:
             try:
-                by_struct.setdefault(ue.object_name(ue.mem.ptr(t + 0x28)), t)
+                by_struct.setdefault(ue.object_name(mem.ptr(t + 0x28)), []).append(t)
             except MemoryReadError:
                 continue
-        definitions = {ue.mem.i32(row + 8): ue.mem.i32(row + 0x3C)
-                       for _, row in ue.table_rows(by_struct['UNIT_PARAMETER'], 'UNIT_PARAMETER')}
-        lists = {ue.mem.i32(row + 8): ue.mem.ptr(row + 0x10)
-                 for _, row in ue.table_rows(by_struct['UNIT_LEVEL_PARAMETER_LIST'], 'UNIT_LEVEL_PARAMETER_LIST')}
-        curves = {}
+        definitions = self._merged_rows(by_struct, 'UNIT_PARAMETER', 8, lambda r: mem.i32(r + 0x3C))
+        lists = self._merged_rows(by_struct, 'UNIT_LEVEL_PARAMETER_LIST', 8, lambda r: mem.ptr(r + 0x10))
+        curves, missing = {}, []
         for char_id in NAMES:
             try:
                 per_level = {}
                 for _, row in ue.table_rows(lists[definitions[char_id]], 'UNIT_LEVEL_PARAMETER'):
-                    per_level[ue.mem.i32(row + 8)] = ue.mem.i32(row + 12)
+                    per_level[mem.i32(row + 8)] = mem.i32(row + 12)
                 total, cumulative = 0, []
                 for lv in range(1, 100):
                     total += per_level[lv]
                     cumulative.append(total)   # EXP total para alcanzar el nivel lv
                 curves[char_id] = cumulative
             except (MemoryReadError, KeyError) as ex:
-                print(f'[ffrs] sin curva de nivel para {NAMES[char_id]} ({char_id}): {ex!r}', flush=True)
+                step = ('sin fila en UNIT_PARAMETER' if char_id not in definitions else
+                        f'curva {definitions[char_id]} sin lista' if definitions[char_id] not in lists else repr(ex))
+                missing.append(f'{char_id}: {step}')
+                print(f'[ffrs] sin curva de nivel para {NAMES[char_id]} ({char_id}): {step}', flush=True)
         print(f'[ffrs] curvas de nivel cargadas: {sorted(curves)}', flush=True)
+        self.curves_diag = (f'{len(curves)}/{len(NAMES)} personajes'
+                            + (f'; falta {missing[0]}' + (f' (+{len(missing) - 1})' if len(missing) > 1 else '')
+                               if missing else ''))
         return curves
 
     def _array(self, address, max_count):
@@ -186,30 +224,48 @@ class Plugin(GamePlugin):
 
     # --- batalla ---
     def _battle_members(self, world):
+        """[(id, CPP_BtlUnitParameter)] en orden de batalla, o None. Deja en battle_diag
+        en qué paso de la cadena se cortó, para el panel de debug."""
         ue, mem = self.ue, self.ue.mem
-        manager = None
-        for entry in ue.sparse_entries(world + WORLD_SUBSYSTEMS, 24, 256):
+        entries = ue.sparse_entries(world + WORLD_SUBSYSTEMS, 24, 256)
+        manager, classes = None, []
+        for entry in entries:
             obj = mem.ptr(entry + 8)
+            try:
+                classes.append(ue.class_name(obj))
+            except MemoryReadError:
+                classes.append('?')
+                continue
             if ue.live(obj) and ue.isa(obj, 'CPP_BtlManager') and mem.ptr(obj + OBJ_OUTER) == world:
                 manager = obj
                 break
+        if not self.logged_subsystems:
+            self.logged_subsystems = True
+            print(f'[ffrs] subsistemas del World ({len(entries)}): {", ".join(classes)}', flush=True)
         if manager is None:
+            self.battle_diag = f'sin CPP_BtlManager entre {len(entries)} subsistemas'
             return None
         units = mem.ptr(manager + BTL_UNIT_MANAGER)
         if not ue.live(units) or not ue.isa(units, 'CPP_BtlUnitManager'):
+            self.battle_diag = 'CPP_BtlManager sin CPP_BtlUnitManager válido (+0x48)'
             return None
         data, n = self._array(units + UNITS_ARRAY, 128)
-        members = []
+        members, actors, params, ids = [], 0, 0, []
         for i in range(n):
             actor = mem.ptr(data + i * 8)
             if not ue.live(actor) or not ue.isa(actor, 'CPP_BtlUnit'):
                 continue
+            actors += 1
             param = mem.ptr(actor + UNIT_PARAMETER)
             if not ue.live(param) or not ue.isa(param, 'CPP_BtlUnitParameter'):
                 continue
+            params += 1
             char_id = mem.i32(param + PARAM_CHAR_ID)
+            ids.append(char_id)
             if char_id in NAMES and all(m[0] != char_id for m in members):
                 members.append((char_id, param))
+        self.battle_diag = (f'{n} unidades, {actors} CPP_BtlUnit, {params} con parámetros, '
+                            f'{len(members)} aliados; IDs {ids[:8]}')
         return members
 
     # --- fuera de batalla (experimental) ---
@@ -298,6 +354,8 @@ class Plugin(GamePlugin):
         if self.ue.class_name(save) != 'CPP_MuchaGameSaveData':
             raise MemoryReadError('la partida activa no está disponible')
         values['gil'] = mem.i32(save + SAVE_GIL)
+        if not self.curves and time.monotonic() >= self.next_curve_try:
+            self._try_curves()
         units, un = self._array(save + SAVE_UNITS, 64)
         exp = {mem.i32(units + i * UNIT_STRIDE): mem.i32(units + i * UNIT_STRIDE + UNIT_EXP) for i in range(un)}
         party, pn = self._array(save + SAVE_PARTY, 8)
@@ -306,8 +364,8 @@ class Plugin(GamePlugin):
         # Batalla: si hay, manda el orden y los HP/MP en vivo
         try:
             members = self._battle_members(world)
-        except MemoryReadError:
-            members = None
+        except MemoryReadError as ex:
+            members, self.battle_diag = None, f'error: {ex}'
         values['battle'] = f'en batalla ({len(members)})' if members else 'fuera de batalla'
         if members:
             roster = members
@@ -317,6 +375,7 @@ class Plugin(GamePlugin):
         if not any(param for _, param in roster[:4]):
             self.hp_source = 'sin datos de HP/MP' + ('' if members else ' fuera de batalla')
 
+        no_exp = [cid for cid, _ in roster[:4] if cid not in exp]
         for slot, (char_id, param) in enumerate(roster[:4], 1):
             values[f'p{slot}_name'] = NAMES.get(char_id, f'ID {char_id}')
             values[f'p{slot}_img'] = self.portraits.url(char_id, PORTRAIT_NAMES.get(char_id, ()))
@@ -326,5 +385,7 @@ class Plugin(GamePlugin):
                 for key, value in self._hp_mp(param).items():
                     values[f'p{slot}_{key}'] = value
         values['hp_source'] = self.hp_source if members else f'{self.hp_source} (experimental)'
+        values['dbg_battle'] = self.battle_diag
+        values['dbg_curves'] = self.curves_diag + (f'; sin EXP en la partida para {no_exp}' if no_exp else '')
         values['status'] = 'Lectura OK'
         return values

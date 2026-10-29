@@ -250,7 +250,7 @@ def cumulative(level):
 
 def build_ffrs(game=None, *, party=(1001, 1002), units=None, gil=12345,
                battle=None, field=None, props=HP_PROPS, curve_for=None, save=True,
-               world_class='World'):
+               world_class='World', enemy_table=False):
     """Escenario completo de FFRS.
 
     party: IDs del equipo (SaveData +0x90).
@@ -279,14 +279,13 @@ def build_ffrs(game=None, *, party=(1001, 1002), units=None, gil=12345,
     # Curvas: UNIT_PARAMETER (ID -> curva), LIST (curva -> tabla), LEVEL (nivel -> EXP)
     ids = (1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008)
     curve_for = ids if curve_for is None else curve_for
+    if enemy_table:   # otra tabla con el mismo RowStruct, registrada antes (enemigos)
+        g.data_table('UNIT_PARAMETER', [(f'E{i}', {8: ('i32', i), 0x3C: ('i32', 1)}) for i in range(5001, 5040)])
     g.data_table('UNIT_PARAMETER', [(f'U{i}', {8: ('i32', i), 0x3C: ('i32', 9000 + i)}) for i in ids])
     level_tables = {}
     for i in curve_for:
-        t = g.data_table('UNIT_LEVEL_PARAMETER',
-                         [(f'L{lv}', {8: ('i32', lv), 12: ('i32', level_exp(lv))}) for lv in range(1, 100)])
-        level_tables[9000 + i] = t
-    g.data_table('UNIT_LEVEL_PARAMETER_LIST',
-                 [(f'C{c}', {8: ('i32', c), 0x10: ('u64', t)}) for c, t in level_tables.items()])
+        level_tables[9000 + i] = level_table(g)
+    add_curves(g, level_tables)
 
     if save:
         mgr_cdo = g.obj('Default__CPP_MuchaSaveDataManager', 'CPP_MuchaSaveDataManager',
@@ -327,6 +326,17 @@ def build_ffrs(game=None, *, party=(1001, 1002), units=None, gil=12345,
     g.field_params = [unit_parameter(g, 'CPP_UnitParameter', cid, stats, outer=g.gi)
                       for cid, stats in (field or ())]
     return g
+
+
+def level_table(g):
+    return g.data_table('UNIT_LEVEL_PARAMETER',
+                        [(f'L{lv}', {8: ('i32', lv), 12: ('i32', level_exp(lv))}) for lv in range(1, 100)])
+
+
+def add_curves(g, level_tables):
+    """Tabla UNIT_LEVEL_PARAMETER_LIST: {id de curva: tabla de niveles}."""
+    g.data_table('UNIT_LEVEL_PARAMETER_LIST',
+                 [(f'C{c}', {8: ('i32', c), 0x10: ('u64', t)}) for c, t in level_tables.items()])
 
 
 def unit_parameter(g, cls, cid, stats, outer=0):

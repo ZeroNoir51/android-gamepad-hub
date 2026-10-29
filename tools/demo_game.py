@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Juego falso para probar el sistema de plugins sin un juego real.
 
-Pruébalo como lo haría Steam:  ps5gamepad run python3 tools/demo_game.py
+Pruébalo como lo haría Steam:  gamepad run python3 tools/demo_game.py
 
 Guarda HP/MP/Gold en una estructura en memoria nativa y publica en
-/tmp/ps5-gamepad-demo.json la dirección de un objeto "World" que contiene
+/tmp/gamepad-demo.json la dirección de un objeto "World" que contiene
 un puntero al jugador (para probar cadenas de punteros).
 
 Disposición en memoria:
@@ -19,7 +19,7 @@ import random
 import time
 from pathlib import Path
 
-INFO = Path('/tmp/ps5-gamepad-demo.json')
+INFO = Path('/tmp/gamepad-demo.json')
 MAGIC = 0x42444847  # 'GHDB' en little-endian
 
 
