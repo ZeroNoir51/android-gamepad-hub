@@ -109,8 +109,8 @@ body.touchmode .touch{display:flex}
 .b.on{background:var(--amber);color:#1a1408;border-color:var(--amber)}
 .center{display:flex;gap:8px}
 
-.guidetoast{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;pointer-events:none;
-  background:var(--panel);border:1px solid var(--cyan);color:var(--cyan);border-radius:10px;padding:10px 22px;font:600 18px/1 var(--ui)}
+.tbtn.on{background:var(--amber);color:#1a1408;border-color:var(--amber)}
+#guideBtn{touch-action:none}
 
 /* remapeo */
 .remap{position:fixed;inset:0;background:var(--bg);display:none;flex-direction:column;gap:10px;z-index:5;
@@ -162,6 +162,7 @@ body.locked .login{display:flex}
   <span class="conn" id="conn">Sin conexión</span>
   <span class="spacer"></span>
   <span class="rtt num" id="rtt" title="Ida y vuelta por Wi-Fi">— ms</span>
+  <button class="tbtn" id="guideBtn" title="Botón Guide del mando (menú de Steam)">Guide</button>
   <button class="tbtn" id="debugBtn" aria-pressed="false" title="Mostrar datos de diagnóstico">Debug</button>
   <button class="tbtn" id="remapBtn">Remapear</button>
   <button class="tbtn" id="touchBtn">Táctil</button>
@@ -196,7 +197,6 @@ body.locked .login{display:flex}
   </section>
 </main>
 
-<div class="guidetoast" id="guideToast" hidden>Guide</div>
 <footer class="foot" id="foot">Pulsa un botón del mando para detectarlo.</footer>
 
 <div class="remap" id="remap" role="dialog" aria-label="Remapear mando">
@@ -485,22 +485,25 @@ $('#rmSave').onclick = () => {
   padId = ''; setMode('physical');
 };
 
-/* Tocar cualquier zona libre de la pantalla = pulsar Guide (abre el menú de Steam). */
+/* Botón Guide de la barra superior (abre el menú de Steam). Mantener = mantener pulsado;
+   un toque corto dura al menos GUIDE_PULSE_MS para que Steam lo registre. */
 const GUIDE_PULSE_MS = 150;
-let guideUntil = 0, guideTapped = false;
-document.addEventListener('click', e => {
-  if (mode !== 'physical' || document.body.classList.contains('locked')) return;
-  if (e.target.closest('button, a, input, .top, .remap, .touch, .login')) return;
-  guideUntil = performance.now() + GUIDE_PULSE_MS;
-  const t = $('#guideToast');
-  t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => { t.hidden = true; }, 600);
-});
+let guideUntil = 0, guideDown = false, guideTapped = false;
+{
+  const b = $('#guideBtn');
+  const set = on => { guideDown = on; b.classList.toggle('on', on); };
+  b.addEventListener('pointerdown', e => {
+    e.preventDefault(); b.setPointerCapture(e.pointerId);
+    guideUntil = performance.now() + GUIDE_PULSE_MS; set(true);
+  });
+  for (const t of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(t, () => set(false));
+}
 
 function frame() {
   if (mode === 'physical') {
     pollGamepad();
-    // sin mando físico nadie más toca state.guide: hay que soltarlo al acabar el pulso
-    const tapping = performance.now() < guideUntil;
+    // sin mando físico nadie más toca state.guide: hay que soltarlo al acabar la pulsación
+    const tapping = guideDown || performance.now() < guideUntil;
     if (tapping) state.guide = 1; else if (guideTapped) state.guide = 0;
     guideTapped = tapping;
   }
