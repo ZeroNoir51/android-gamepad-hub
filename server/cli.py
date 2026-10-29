@@ -15,7 +15,7 @@ def main():
         print(USAGE)
         return 0
     if args[0] == 'serve':
-        from .main import main as serve   # importa aiohttp/evdev solo aquí
+        from .main import main as serve   # importa aiohttp solo aquí
         return serve(args[1:])
     if args[0] == 'run':
         from .launcher import main as run  # solo biblioteca estándar

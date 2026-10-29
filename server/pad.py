@@ -1,8 +1,12 @@
-"""Mando virtual. Linux: uinput (evdev). Pruebas u otros sistemas: NullPad.
+"""Mando virtual. Linux: /dev/uinput sin dependencias. Pruebas u otros sistemas: NullPad.
 
 Windows (futuro): implementar WindowsPad con ViGEmBus (p. ej. el paquete
 `vgamepad`) respetando la misma interfaz: apply(state), reset(), close().
 """
+import fcntl
+import os
+import struct
+
 from . import protocol
 
 
@@ -23,55 +27,81 @@ class NullPad:
         self.reset()
 
 
+# --- uinput sin dependencias (linux/input.h, linux/uinput.h) ---
+# Antes se usaba python-evdev, pero no tiene paquetes precompilados: en sistemas
+# inmutables (Bazzite) compilarlo exige python3-devel, es decir, sudo y reiniciar.
+EV_SYN, EV_KEY, EV_ABS, SYN_REPORT, BUS_USB = 0x00, 0x01, 0x03, 0, 0x03
+BTN = {'a': 0x130, 'b': 0x131, 'x': 0x133, 'y': 0x134,       # SOUTH EAST NORTH WEST
+       'lb': 0x136, 'rb': 0x137, 'back': 0x13a, 'start': 0x13b, 'guide': 0x13c,
+       'ls': 0x13d, 'rs': 0x13e}                             # TL TR SELECT START MODE THUMBL/R
+STICK = (-32768, 32767, 16, 128)                             # mínimo, máximo, fuzz, flat
+TRIGGER = (0, 255, 0, 0)
+HAT = (-1, 1, 0, 0)
+ABS = {'lx': (0x00, STICK), 'ly': (0x01, STICK), 'rx': (0x03, STICK), 'ry': (0x04, STICK),
+       'lt': (0x02, TRIGGER), 'rt': (0x05, TRIGGER), 'dx': (0x10, HAT), 'dy': (0x11, HAT)}
+
+
+def _iow(nr, size):
+    return (1 << 30) | (size << 16) | (ord('U') << 8) | nr
+
+
+UI_DEV_CREATE, UI_DEV_DESTROY = 0x5501, 0x5502
+UI_DEV_SETUP = _iow(3, 92)            # struct uinput_setup
+UI_ABS_SETUP = _iow(4, 28)            # struct uinput_abs_setup
+UI_SET_EVBIT, UI_SET_KEYBIT, UI_SET_ABSBIT = _iow(100, 4), _iow(101, 4), _iow(103, 4)
+EVENT = struct.Struct('llHHi')         # struct input_event (timeval nativo; el kernel pone la hora)
+
+
 class UInputPad:
     name = 'PS5 GamePad Virtual Xbox 360'
 
-    def __init__(self):
-        from evdev import UInput, AbsInfo, ecodes as e
-        self._e = e
-        self.buttons = {
-            'a': e.BTN_SOUTH, 'b': e.BTN_EAST, 'x': e.BTN_NORTH, 'y': e.BTN_WEST,
-            'lb': e.BTN_TL, 'rb': e.BTN_TR, 'back': e.BTN_SELECT,
-            'start': e.BTN_START, 'guide': e.BTN_MODE,
-            'ls': e.BTN_THUMBL, 'rs': e.BTN_THUMBR,
-        }
-        self.axes = {'lx': e.ABS_X, 'ly': e.ABS_Y, 'rx': e.ABS_RX, 'ry': e.ABS_RY,
-                     'lt': e.ABS_Z, 'rt': e.ABS_RZ, 'dx': e.ABS_HAT0X, 'dy': e.ABS_HAT0Y}
-        stick = AbsInfo(0, -32768, 32767, 16, 128, 0)
-        trig = AbsInfo(0, 0, 255, 0, 0, 0)
-        hat = AbsInfo(0, -1, 1, 0, 0, 0)
-        caps = {
-            e.EV_KEY: list(self.buttons.values()),
-            e.EV_ABS: [(e.ABS_X, stick), (e.ABS_Y, stick), (e.ABS_RX, stick), (e.ABS_RY, stick),
-                       (e.ABS_Z, trig), (e.ABS_RZ, trig), (e.ABS_HAT0X, hat), (e.ABS_HAT0Y, hat)],
-        }
-        # Identidad de mando Xbox 360 con cable. Es un dispositivo uinput, no XInput real.
-        self.dev = UInput(caps, name=self.name, vendor=0x045e, product=0x028e,
-                          version=0x0114, bustype=e.BUS_USB)
+    def __init__(self, path='/dev/uinput'):
+        self.fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
+        try:
+            fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_KEY)
+            for code in BTN.values():
+                fcntl.ioctl(self.fd, UI_SET_KEYBIT, code)
+            fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_ABS)
+            for code, (lo, hi, fuzz, flat) in ABS.values():
+                fcntl.ioctl(self.fd, UI_SET_ABSBIT, code)
+                # uinput_abs_setup: code (u16, +2 de relleno) + input_absinfo (6 x s32)
+                fcntl.ioctl(self.fd, UI_ABS_SETUP, struct.pack('<H2x6i', code, 0, lo, hi, fuzz, flat, 0))
+            # Identidad de mando Xbox 360 con cable. Es un dispositivo uinput, no XInput real.
+            name = self.name.encode()[:79]
+            fcntl.ioctl(self.fd, UI_DEV_SETUP,
+                        struct.pack('<4H80sI', BUS_USB, 0x045e, 0x028e, 0x0114, name, 0))
+            fcntl.ioctl(self.fd, UI_DEV_CREATE)
+        except OSError:
+            os.close(self.fd)
+            raise
         self.state = protocol.neutral()
 
     def apply(self, state):
-        e = self._e
-        dirty = False
+        events = []
         for key, value in state.items():
             if self.state[key] == value:
                 continue
-            code = self.buttons.get(key)
-            if code is not None:
-                self.dev.write(e.EV_KEY, code, value)
+            if key in BTN:
+                events.append(EVENT.pack(0, 0, EV_KEY, BTN[key], value))
             else:
-                self.dev.write(e.EV_ABS, self.axes[key], value)
-            dirty = True
-        if dirty:
-            self.dev.syn()
+                events.append(EVENT.pack(0, 0, EV_ABS, ABS[key][0], value))
+        if events:
+            events.append(EVENT.pack(0, 0, EV_SYN, SYN_REPORT, 0))
+            os.write(self.fd, b''.join(events))
         self.state = state
 
     def reset(self):
         self.apply(protocol.neutral())
 
     def close(self):
-        self.reset()
-        self.dev.close()
+        if self.fd is None:
+            return
+        try:
+            self.reset()
+            fcntl.ioctl(self.fd, UI_DEV_DESTROY)
+        finally:
+            os.close(self.fd)
+            self.fd = None
 
 
 def create_pad(kind):
@@ -80,7 +110,7 @@ def create_pad(kind):
         return NullPad()
     try:
         return UInputPad()
-    except Exception as ex:  # ImportError, PermissionError, FileNotFoundError...
+    except Exception as ex:  # PermissionError, FileNotFoundError...
         if kind == 'uinput':
             raise
         print(f'[pad] uinput no disponible ({ex!r}); usando NullPad', flush=True)

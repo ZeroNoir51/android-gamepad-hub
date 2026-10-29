@@ -1,4 +1,4 @@
-# PS5 GamePad Hub v0.4.3
+# PS5 GamePad Hub v0.4.4
 
 Android (navegador hoy, APK después) → Wi-Fi local → PC Linux: mando virtual, telemetría (FPS, frametimes, CPU/GPU, RAM, latencia) y datos del juego leídos de memoria. **Nada se ejecuta como root.**
 
@@ -14,9 +14,11 @@ Linux (con `kernel.yama.ptrace_scope=1`, el valor de Ubuntu) solo deja leer la m
 ## Instalación (con tu usuario, sin sudo)
 
 ```
-cd ps5-gamepad-v0.4.3
+cd ps5-gamepad-v0.4.4
 sh tools/install.sh
 ```
+
+Solo necesita Python 3 y `aiohttp` (sin compilar nada: el mando virtual habla con `/dev/uinput` directamente). Funciona igual en sistemas inmutables como Bazzite.
 
 Crea `~/.local/bin/ps5gamepad` y el servicio de usuario `ps5gamepad`, y te dice si tu usuario ya puede crear el mando virtual.
 
@@ -147,7 +149,7 @@ server/
   main.py       servicio: HTTP, WebSocket, watchdog, telemetría, socket puente
   launcher.py   lanzador: juego hijo, MangoHud, plugins, puente
   auth.py       código de acceso y sesiones
-  pad.py        mando uinput
+  pad.py        mando uinput (ioctl directos, sin evdev)
   telemetry.py  /proc, /sys y log de MangoHud
   memory.py     lectura de memoria y descendientes
   ue.py         lector de Unreal Engine 5 (nombres, objetos, GWorld)
