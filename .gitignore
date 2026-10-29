@@ -3,3 +3,7 @@ __pycache__/
 .pytest_cache/
 decky/node_modules/
 decky/dist/*.map
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties

@@ -1,0 +1,41 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'dev.gamepad.client'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'dev.gamepad.client'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '0.1'
+    }
+
+    signingConfigs {
+        // Clave propia guardada en el proyecto: así una APK nueva se instala encima de la
+        // anterior aunque se compile en otra máquina (con la clave de depuración no).
+        release {
+            storeFile file('../keystore/gamepad.jks')
+            storePassword 'CONTRASEÑA-RETIRADA'
+            keyAlias 'gamepad'
+            keyPassword 'CONTRASEÑA-RETIRADA'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

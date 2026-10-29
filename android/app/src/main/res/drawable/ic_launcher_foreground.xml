@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mando estilizado (genérico), 108x108 con zona segura de 66 en el centro. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFB547"
+        android:pathData="M36,40 h36 a14,14 0 0 1 13.6,10.7 l4.6,19 a7,7 0 0 1 -11.8,6.4 l-7.4,-8.1 h-34 l-7.4,8.1 a7,7 0 0 1 -11.8,-6.4 l4.6,-19 A14,14 0 0 1 36,40 z" />
+    <path android:fillColor="#15171C" android:pathData="M37,48 h4 v5 h5 v4 h-5 v5 h-4 v-5 h-5 v-4 h5 z" />
+    <path android:fillColor="#15171C" android:pathData="M71,49 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+    <path android:fillColor="#15171C" android:pathData="M65,56 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+    <path android:fillColor="#15171C" android:pathData="M77,56 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+    <path android:fillColor="#15171C" android:pathData="M71,63 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+</vector>

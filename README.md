@@ -88,7 +88,11 @@ Steam no deja que programas externos muestren avisos en Big Picture; con [Decky 
 
 Instalar: copia `gamepad-decky-<versión>.zip` a la PS5, activa el modo desarrollador en los ajustes de Decky e instala el plugin desde el ZIP. Para compilarlo tú: `sh tools/build-decky.sh` (necesita Node.js).
 
-### En el cliente (Android)
+### App de Android (opcional, más ligera que Chrome)
+
+`gamepad-android-<versión>.apk`: cliente nativo con el mismo protocolo, sin navegador; el mando llega por eventos de Android en vez de consultarse en cada fotograma. Ver `android/README.md`.
+
+### En el cliente web (Chrome)
 
 - **Remapear:** si algún botón del mando físico no corresponde (el navegador lo marca como "mapeo no estándar"), pulsa *Remapear* y sigue los pasos: pulsa cada botón, gatillo o dirección que se pide. Lo que no exista se omite. El mapeo se guarda en ese navegador, por mando; *Volver al mapeo por defecto* lo borra. Mientras remapeas, el PC no recibe ninguna pulsación.
 - **Debug:** muestra u oculta el panel de diagnóstico del plugin (estado, origen de HP/MP, mapa, ejecutable, diagnóstico de batalla y de curvas de nivel). Se recuerda en ese navegador.
@@ -231,5 +235,6 @@ server/
 plugins/        demo_game.py, _template/ (y ffrs/ en el repositorio; se empaqueta aparte)
 tests/          arnés de memoria UE5 sintética y tests (pytest)
 tools/          install.sh, gamepad.service, demo_game.py
-web/index.html  cliente Android
+web/index.html  cliente web (Chrome)
+android/        APK nativa (Java, sin dependencias)
 ```
