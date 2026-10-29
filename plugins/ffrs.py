@@ -3,6 +3,7 @@
 Solo lectura. Las rutas vienen de la tabla FFRS_Steam_24250053_Starter.CT
 (shawnjohnjr/ff-RESONANCE-ct), probada por su autor en esta build:
 
+  Limit:    parámetro de la unidad +0x118, tope +0x2A0                  (script 15)
   Gil:      World +0x228 -> GameInstance
             objeto CPP_MuchaSaveDataManager cuyo outer (+0x20) es esa GameInstance
             +0x60 -> CPP_MuchaGameSaveData;  Gil = int32 en +0x28           (script 01)
@@ -49,6 +50,7 @@ UNIT_STRIDE, UNIT_EXP = 0xA0, 0x04
 WORLD_SUBSYSTEMS = 0x930
 BTL_UNIT_MANAGER, UNITS_ARRAY, UNIT_PARAMETER, PARAM_CHAR_ID = 0x48, 0x28, 0x838, 0xD0
 PARAM_HP, PARAM_MP = 0x10C, 0x110         # actual, en CPP_UnitParameter y CPP_BtlUnitParameter
+PARAM_LIMIT, PARAM_LIMIT_MAX = 0x118, 0x2A0   # tabla CT (script 15); en el juego real: 0 y 100
 VM_CLASS = 'CPP_VM_UnitParam'             # ViewModel de la interfaz: da el máximo
 VM_NAMES = ('UnitId', 'HitPointVM', 'MagicPointVM')
 POINT_NAMES = ('CurrentPoint', 'MaxPoint')
@@ -74,6 +76,7 @@ def _party_fields():
             Field(f'p{n}_lv', 'Nivel', kind='text', section='party', slot=n),
             Field(f'p{n}_hp', 'HP', kind='bar', max_key=f'p{n}_hp_max', tone='hp', section='party', slot=n),
             Field(f'p{n}_mp', 'MP', kind='bar', max_key=f'p{n}_mp_max', tone='mp', section='party', slot=n),
+            Field(f'p{n}_lb', 'Limit', kind='bar', max_key=f'p{n}_lb_max', tone='limit', section='party', slot=n),
         ]
     return fields
 
@@ -409,6 +412,9 @@ class Plugin(GamePlugin):
         try:
             if param is not None:
                 out['hp'], out['mp'] = mem.i32(param + PARAM_HP), mem.i32(param + PARAM_MP)
+                lb, lb_max = mem.i32(param + PARAM_LIMIT), mem.i32(param + PARAM_LIMIT_MAX)
+                if 0 < lb_max <= 10000 and 0 <= lb <= lb_max:   # si no cuadra, no se muestra
+                    out['lb'], out['lb_max'] = lb, lb_max
                 src.append('actual de la unidad')
             vm = self._vm(char_id)
             if vm is not None:
@@ -478,7 +484,8 @@ class Plugin(GamePlugin):
                 values[f'p{slot}_{key}'] = value
             sources.update(src)
             diag.append(f"{NAMES.get(char_id, char_id)} HP {stats.get('hp', '—')}/{stats.get('hp_max', '—')}"
-                        f" MP {stats.get('mp', '—')}/{stats.get('mp_max', '—')}")
+                        f" MP {stats.get('mp', '—')}/{stats.get('mp_max', '—')}"
+                        f" LB {stats.get('lb', '—')}/{stats.get('lb_max', '—')}")
         values['hp_source'] = (' + '.join(sorted(sources)) if sources else 'sin objetos de HP/MP todavía') + (
             ' (batalla)' if members else ' (fuera de batalla)')
         values['dbg_hpmp'] = ' · '.join(diag)

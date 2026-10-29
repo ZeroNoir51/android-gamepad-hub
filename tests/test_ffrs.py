@@ -83,7 +83,7 @@ def test_en_batalla_hp_mp_y_orden(attach):
     assert hp(v, 2) == (1200, 1500, 30, 60)
     assert v['p1_lv'] == 'Nv 10 · faltan 1.100 EXP'                  # la EXP sigue al ID
     assert v['hp_source'] == 'actual de la unidad + máximo de la interfaz (batalla)'
-    assert v['dbg_hpmp'] == 'Lasswell HP 800/1000 MP 40/90 · Rain HP 1200/1500 MP 30/60'
+    assert v['dbg_hpmp'] == 'Lasswell HP 800/1000 MP 40/90 LB —/— · Rain HP 1200/1500 MP 30/60 LB —/—'
 
 
 def test_hp_actual_en_vivo_aunque_la_interfaz_no_cambie(attach):
@@ -278,3 +278,11 @@ def test_censo_en_el_log(attach, capsys):
     out = capsys.readouterr().out
     assert '       1  CPP_UnitParameter' in out
     assert '       1  UNIT_LEVEL_PARAMETER_LIST' in out and '       8  UNIT_LEVEL_PARAMETER' in out
+
+
+def test_limit(attach):
+    g = build_ffrs(party=(1001, 1002), battle=[(1001, dict(STATS[1001], lb=37, lb_max=100)),
+                                              (1002, dict(STATS[1002], lb=150, lb_max=100))])
+    v = attach(g).read(g.mem)
+    assert (v['p1_lb'], v['p1_lb_max']) == (37, 100)
+    assert 'p2_lb' not in v                           # actual > tope: no cuadra, no se muestra

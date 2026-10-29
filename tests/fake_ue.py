@@ -380,7 +380,7 @@ def unit_parameter(g, cls, cid, stats, outer=0):
     """CPP_UnitParameter o CPP_BtlUnitParameter: ID en +0xD0, HP/MP actual en +0x10C/+0x110."""
     param = g.obj(f'{cls}_{cid}_{len(g.objects)}', cls, outer=outer)
     g.mem.put('i32', param + 0xD0, cid)
-    for key, off in (('hp', 0x10C), ('mp', 0x110)):
+    for key, off in (('hp', 0x10C), ('mp', 0x110), ('lb', 0x118), ('lb_max', 0x2A0)):
         if key in stats:
             g.mem.put('i32', param + off, stats[key])
     return param
