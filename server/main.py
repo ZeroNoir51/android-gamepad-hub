@@ -9,7 +9,6 @@ import asyncio
 import json
 import os
 import platform
-import secrets
 import string
 import sys
 import time
@@ -18,7 +17,7 @@ from urllib.parse import urlsplit
 
 from aiohttp import web, WSMsgType
 
-from . import VERSION, paths, portraits, protocol
+from . import VERSION, auth, paths, portraits, protocol, status
 from .auth import COOKIE, SESSION_TTL, AuthGuard, SessionStore
 from .pad import create_pad
 from .telemetry import MangoHudTail, SystemTelemetry
@@ -50,7 +49,7 @@ def parse_args(argv=None):
     p = argparse.ArgumentParser(prog='gamepad serve', description='GamePad Hub')
     p.add_argument('--host', default='0.0.0.0')
     p.add_argument('--port', type=int, default=8080)
-    p.add_argument('--token', help='4 letras A-Z (si no, aleatorio)')
+    p.add_argument('--token', help='4 letras A-Z (si no, el código guardado; ver `gamepad code`)')
     p.add_argument('--pad', choices=('auto', 'uinput', 'null'), default='uinput',
                    help='null = sin mando virtual (probar telemetría)')
     p.add_argument('--telemetry-hz', type=float, default=4.0)
@@ -69,9 +68,9 @@ def main(argv=None):
     args = parse_args(argv)
     if os.geteuid() == 0:
         print('AVISO: no hace falta root. Ejecuta `gamepad serve` con tu usuario (ver README).', flush=True)
-    token = args.token or ''.join(secrets.choice(string.ascii_uppercase) for _ in range(4))
+    token = args.token or auth.load_or_create_code(paths.code_file())
     mangohud_dir = args.mangohud_dir or str(paths.mangohud_dir())
-    sessions_file = args.sessions_file or str(paths.state_dir() / 'sessions.json')
+    sessions_file = args.sessions_file or str(paths.sessions_file())
 
     pad = create_pad(args.pad)
     hub = Hub(pad)
@@ -250,6 +249,7 @@ def main(argv=None):
 
     async def lifetime(app):
         tasks = [asyncio.create_task(c()) for c in (input_watchdog, telemetry_loop, bridge_server)]
+        status.notify(f'GamePad {VERSION} listo', f'Android: {status.url(args.port)}\nCódigo: {token}')
         try:
             yield
         finally:
@@ -268,7 +268,7 @@ def main(argv=None):
     app.cleanup_ctx.append(lifetime)
 
     print(f'GamePad Hub {VERSION} · mando: {pad.name}', flush=True)
-    print(f'Abre en Android: http://<IP-LAN>:{args.port}', flush=True)
+    print(f'Abre en Android: {status.url(args.port)}', flush=True)
     print(f'Código de acceso: {token}   (la sesión dura 24 h)', flush=True)
     print('Solo red local de confianza: sin cifrado. No expongas el puerto a Internet.', flush=True)
     web.run_app(app, host=args.host, port=args.port, print=None)

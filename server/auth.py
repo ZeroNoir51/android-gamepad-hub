@@ -76,3 +76,25 @@ class SessionStore:
     def revoke(self, sid):
         if sid and self.sessions.pop(self._h(sid), None) is not None:
             self._save()
+
+
+def load_or_create_code(path):
+    """Código de acceso fijo: se genera una vez y se guarda (0600). Vuelve a crearlo si no es válido."""
+    try:
+        with open(path) as f:
+            code = f.read().strip().upper()
+        if len(code) == 4 and code.isascii() and code.isalpha():
+            return code
+    except OSError:
+        pass
+    return new_code(path)
+
+
+def new_code(path):
+    code = ''.join(secrets.choice('ABCDEFGHIJKLMNOPQRSTUVWXYZ') for _ in range(4))
+    tmp = f'{path}.tmp'
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as f:
+        f.write(code + '\n')
+    os.replace(tmp, path)
+    return code

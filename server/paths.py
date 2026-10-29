@@ -50,3 +50,11 @@ def portraits_dir():
     path = data_dir() / 'portraits'
     path.mkdir(mode=0o700, exist_ok=True)
     return path
+
+
+def code_file():
+    return state_dir() / 'code'
+
+
+def sessions_file():
+    return state_dir() / 'sessions.json'

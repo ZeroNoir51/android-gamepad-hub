@@ -1,0 +1,11 @@
+{
+  "name": "GamePad",
+  "author": "claudio",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["gamepad", "android", "status"],
+    "description": "Estado del servicio GamePad: aviso al arrancar, URL para Android y código de acceso.",
+    "image": ""
+  }
+}

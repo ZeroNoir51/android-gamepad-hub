@@ -1,4 +1,4 @@
-# GamePad Hub 0.1
+# GamePad Hub 0.2
 
 Android (navegador hoy, APK después) → Wi-Fi local → PC Linux: mando virtual, telemetría (FPS, frametimes, CPU/GPU, RAM, latencia) y datos del juego leídos de memoria. **Nada se ejecuta como root.**
 
@@ -16,7 +16,7 @@ Linux (con `kernel.yama.ptrace_scope=1`, el valor de Ubuntu) solo deja leer la m
 El proyecto vive siempre en la misma carpeta, `~/proyectos/gamepad`, y los zips se llaman `gamepad-<versión>.zip` y se descomprimen en ella. Así la ruta del comando no cambia entre versiones.
 
 ```
-cd ~/proyectos && unzip -o gamepad-0.1.zip
+cd ~/proyectos && unzip -o gamepad-0.2.zip
 cd gamepad && sh tools/install.sh
 systemctl --user enable --now gamepad
 ```
@@ -67,7 +67,7 @@ No desactives firewalld para salir del paso.
 ## Uso
 
 1. Servicio: `systemctl --user start gamepad` (y `enable` para que arranque al iniciar sesión).
-2. Código de acceso: `journalctl --user -u gamepad -n 20`.
+2. Código de acceso y URL: `gamepad status`. El código es fijo (se guarda en `~/.local/state/gamepad/code`, 0600); `gamepad code --new` lo cambia y cierra las sesiones abiertas (luego `systemctl --user restart gamepad`). Al arrancar, el servicio manda una notificación de escritorio con la URL y el código.
 3. Android: abre `http://IP-DEL-PC:8080` y escribe el código. La sesión dura 24 h.
 4. Steam, propiedades del juego, opciones de lanzamiento (ruta absoluta, cambia TU_USUARIO):
    ```
@@ -77,6 +77,15 @@ No desactives firewalld para salir del paso.
 Si el juego no muestra datos, el registro del lanzador está en `$XDG_RUNTIME_DIR/gamepad/launcher.log` (normalmente `/run/user/1000/gamepad/launcher.log`).
 
 Para probar sin juego real: `gamepad run python3 tools/demo_game.py`.
+
+### Aviso en Big Picture / Game Mode (Decky Loader, opcional)
+
+Steam no deja que programas externos muestren avisos en Big Picture; con [Decky Loader](https://decky.xyz) sí. **Decky Loader corre como root** (en Bazzite: `ujust setup-decky`); el plugin de GamePad no pide root y corre con tu usuario: solo lee `~/.local/state/gamepad/code` y pregunta al servicio en `127.0.0.1` si responde.
+
+- Aviso "GamePad listo" con la URL y el código cuando el servicio responde (también al iniciar Steam) y "GamePad no responde" si se cae.
+- Panel en el menú de acceso rápido (botón `…`, icono de mando) con estado, URL y código.
+
+Instalar: copia `gamepad-decky-<versión>.zip` a la PS5, activa el modo desarrollador en los ajustes de Decky e instala el plugin desde el ZIP. Para compilarlo tú: `sh tools/build-decky.sh` (necesita Node.js).
 
 ### En el cliente (Android)
 
