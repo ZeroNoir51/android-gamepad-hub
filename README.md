@@ -1,4 +1,4 @@
-# PS5 GamePad Hub v0.4.4
+# PS5 GamePad Hub v0.4.5
 
 Android (navegador hoy, APK después) → Wi-Fi local → PC Linux: mando virtual, telemetría (FPS, frametimes, CPU/GPU, RAM, latencia) y datos del juego leídos de memoria. **Nada se ejecuta como root.**
 
@@ -14,7 +14,7 @@ Linux (con `kernel.yama.ptrace_scope=1`, el valor de Ubuntu) solo deja leer la m
 ## Instalación (con tu usuario, sin sudo)
 
 ```
-cd ps5-gamepad-v0.4.4
+cd ps5-gamepad-v0.4.5
 sh tools/install.sh
 ```
 
@@ -37,6 +37,25 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
 Cierra sesión y vuelve a entrar. Se usa un grupo propio porque el grupo `input` también permite leer teclado y ratón.
+
+### Firewall (Fedora, Bazzite y otros con firewalld)
+
+Ubuntu no trae firewall activo; Fedora y Bazzite sí. Si Android dice "Address Unreachable", abre el puerto solo para tu red local (ajusta la zona, que ves con `sudo firewall-cmd --get-active-zones`, y el rango de tu red):
+
+```
+sudo firewall-cmd --permanent --zone=FedoraWorkstation --add-rich-rule='rule family="ipv4" source address="192.168.1.0/24" port port="8080" protocol="tcp" accept'
+sudo firewall-cmd --reload
+```
+
+Si responde `RUNNING_BUT_FAILED`, firewalld no pudo cargar sus reglas y está en modo de emergencia. Mira el motivo con `journalctl -u firewalld -b | grep -i error`. En la PS5 con Bazzite (kernel 7.3.0) faltaba el módulo `nf_conntrack_netbios_ns`, que pide el servicio `samba-client` de la zona; se arregla con una copia de la zona sin ese servicio:
+
+```
+sudo cp /usr/lib/firewalld/zones/FedoraWorkstation.xml /etc/firewalld/zones/
+sudo sed -i '/<service name="samba-client"\/>/d' /etc/firewalld/zones/FedoraWorkstation.xml
+sudo systemctl restart firewalld
+```
+
+No desactives firewalld para salir del paso.
 
 ## Uso
 

@@ -25,6 +25,10 @@ if [ -w /dev/uinput ]; then
 else
   echo "FALTA: tu usuario no puede escribir en /dev/uinput. Ver README, sección 'Permisos del mando'."
 fi
+if systemctl is-active --quiet firewalld 2>/dev/null; then
+  echo
+  echo "AVISO: firewalld está activo. Si Android no conecta (\"Address Unreachable\"), ver README, sección 'Firewall'."
+fi
 echo
 echo "Arrancar ahora:          systemctl --user start ps5gamepad"
 echo "Arrancar al iniciar:     systemctl --user enable ps5gamepad"

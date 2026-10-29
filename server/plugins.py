@@ -75,6 +75,7 @@ def load_plugins(folder):
 class PluginManager:
     SCAN_EVERY = 2.0
     ERROR_EVERY = 2.0
+    RETRY_LOG_EVERY = 30.0   # s; un enganche que aún no puede leer se reintenta en silencio
 
     def __init__(self, plugins, root_pid):
         self.plugins = plugins
@@ -82,7 +83,8 @@ class PluginManager:
         self.active = None     # (plugin, mem, proc)
         self._next_scan = 0.0
         self._last_error_sent = 0.0
-        self._failed = set()   # (plugin_id, pid) que ya fallaron: no reintentar ni repetir el log
+        self._failed = set()   # (plugin_id, pid) que fallaron de forma definitiva: no reintentar
+        self._retrying = {}    # (plugin_id, pid) -> próximo log; el juego aún arranca
 
     @property
     def period(self):
@@ -100,15 +102,27 @@ class PluginManager:
             for plugin in self.plugins:
                 if (plugin.id, proc.pid) in self._failed or not plugin.matches(proc):
                     continue
+                key, mem = (plugin.id, proc.pid), None
                 try:
                     mem = open_process(proc.pid, plugin.ptr_size)
                     plugin.on_attach(mem, proc)
+                    if self._retrying.pop(key, None) is not None:
+                        print(f'[plugins] {plugin.id}: el PID {proc.pid} ya se puede leer', flush=True)
                     return plugin, mem, proc
                 except ProcessGone:
-                    continue
+                    pass
+                except MemoryReadError as ex:
+                    # Normal al arrancar: el juego aún no inicializó sus estructuras (punteros nulos).
+                    now = time.monotonic()
+                    if now >= self._retrying.get(key, 0.0):
+                        self._retrying[key] = now + self.RETRY_LOG_EVERY
+                        print(f'[plugins] {plugin.id}: el PID {proc.pid} aún no se puede leer ({ex}); '
+                              f'reintentando cada {self.SCAN_EVERY:.0f} s', flush=True)
                 except Exception as ex:
-                    self._failed.add((plugin.id, proc.pid))
+                    self._failed.add(key)
                     print(f'[plugins] {plugin.id}: no se pudo enganchar al PID {proc.pid}: {ex}', flush=True)
+                if mem is not None:
+                    mem.close()
         return None
 
     def _detach(self):
