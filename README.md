@@ -1,4 +1,4 @@
-# GamePad Hub 0.2.4
+# GamePad Hub 0.2.5
 
 Android (navegador hoy, APK después) → Wi-Fi local → PC Linux: mando virtual, telemetría (FPS, frametimes, CPU/GPU, RAM, latencia) y datos del juego leídos de memoria. **Nada se ejecuta como root.**
 
@@ -16,7 +16,7 @@ Linux (con `kernel.yama.ptrace_scope=1`, el valor de Ubuntu) solo deja leer la m
 El proyecto vive siempre en la misma carpeta, `~/proyectos/gamepad`, y los zips se llaman `gamepad-<versión>.zip` y se descomprimen en ella. Así la ruta del comando no cambia entre versiones.
 
 ```
-cd ~/proyectos && unzip -o gamepad-0.2.4.zip
+cd ~/proyectos && unzip -o gamepad-0.2.5.zip
 cd gamepad && sh tools/install.sh
 systemctl --user enable --now gamepad
 ```
@@ -124,12 +124,12 @@ Solo para la build 24250053 de Steam: comprueba la cabecera PE del ejecutable (t
 | Gil | estadísticas | partida activa, ruta de la tabla |
 | Nombre de los 4 miembros | tarjetas | equipo de la partida; en batalla, orden de la batalla |
 | Nivel y EXP para el siguiente | línea bajo el nombre | EXP de la partida + curvas de nivel del juego (cálculo propio: compáralo con el menú) |
-| HP y MP | barras de cada tarjeta | en batalla: reflexión de Unreal por nombre de propiedad; fuera de batalla: experimental (ver abajo) |
+| HP y MP | barras de cada tarjeta | actual: parámetro de la unidad (`+0x10C`/`+0x110`); máximo: ViewModel de la interfaz del juego (ver abajo) |
 | Retrato | círculo junto al nombre | imágenes tuyas (ver "Retratos"); si no hay, la inicial |
 
-**HP y MP.** La tabla no los lee, así que el plugin los busca por nombre en la descripción interna de la clase `CPP_BtlUnitParameter` (por ejemplo `HitPoint` y `MaxHitPoint`, el estilo de nombres que usa el juego). Antes de fiarse, comprueba que la reflexión encuentre dos offsets ya confirmados por la tabla (`0xD0`, ID del personaje, y `0x118`, Limit). Si la comprobación falla o un nombre es ambiguo, no muestra ese valor y lo indica en "Origen HP/MP". En la primera batalla escribe la lista completa de propiedades en `launcher.log`.
+**HP y MP.** La tabla no los lee y el juego no los publica con nombre en la reflexión. El **actual** está en el parámetro de cada unidad, en `+0x10C` (HP; la tabla lo usa como "puede actuar si > 0") y `+0x110` (MP), tanto en batalla (`CPP_BtlUnitParameter`) como fuera (`CPP_UnitParameter`). El **máximo** sale del ViewModel que usa la interfaz del juego (`CPP_VM_UnitParam` → `HitPointVM`/`MagicPointVM` → `MaxPoint`), localizado por nombre con la reflexión. Se comprobó en el juego real que ambos coinciden (`CurrentPoint` = `+0x10C`). "Origen HP/MP" dice de dónde sale cada dato; "Diag. HP/MP" muestra los valores leídos.
 
-**HP y MP fuera de batalla (experimental).** La tabla los obtiene llamando a una función del juego, cosa que un lector no puede hacer. El plugin busca los objetos `CPP_UnitParameter` (la clase base de la de batalla) y usa uno solo si es el único con el ID de ese personaje; si hay varios o desaparece, no muestra nada hasta reescanear (cada 15 s como mucho). Aquí la reflexión solo se puede validar con `0xD0`. "Origen HP/MP" termina en "(experimental)" cuando el dato viene de esta vía: compáralo con el menú del juego.
+**Fuera de batalla.** La tabla obtiene el parámetro vivo llamando a una función del juego, cosa que un lector no puede hacer. El plugin busca los objetos `CPP_UnitParameter` y `CPP_VM_UnitParam` y usa uno solo si es el único con el ID de ese personaje; si hay varios o desaparece, no muestra nada hasta reescanear (cada 15 s como mucho).
 
 ### Retratos
 

@@ -14,16 +14,16 @@ Solo lectura. Las rutas vienen de la tabla FFRS_Steam_24250053_Starter.CT
             +0x48 -> CPP_BtlUnitManager; +0x28 = TArray<CPP_BtlUnit*>
             unidad +0x838 -> CPP_BtlUnitParameter; ID de personaje +0xD0  (script 15)
 
-HP y MP en batalla: la tabla no los lee. Se buscan por NOMBRE en la reflexión de
-CPP_BtlUnitParameter (el juego usa nombres como "MaxHitPoint"). La reflexión se
-autocomprueba: debe encontrar los offsets conocidos 0xD0 y 0x118 (Limit). La lista
-completa de propiedades se escribe en launcher.log la primera vez, por clase.
-
-HP y MP fuera de batalla (EXPERIMENTAL): la tabla llama a una función nativa
-(0x523D360) para obtener el CPP_UnitParameter vivo de cada personaje; un lector no
-puede llamar funciones. En su lugar se escanean los objetos CPP_UnitParameter
-(clase base de CPP_BtlUnitParameter, según los `isa` de la tabla) y se usa uno solo
-si es el único con ese ID en +0xD0. Su reflexión solo puede exigir 0xD0.
+HP y MP (la tabla no los lee; verificado con launcher.log del juego real):
+  - NO son UPROPERTY: CPP_UnitParameter solo refleja 4 campos.
+  - Actual: CPP_UnitParameter / CPP_BtlUnitParameter +0x10C (HP) y +0x110 (MP). La tabla
+    usa +0x10C > 0 como "puede actuar"; ambos coincidieron con CurrentPoint del ViewModel.
+  - Máximo: ViewModel de la interfaz CPP_VM_UnitParam (uno por UnitId) -> HitPointVM /
+    MagicPointVM -> MaxPoint. Offsets resueltos por NOMBRE con la reflexión
+    (UnitId, HitPointVM, MagicPointVM, CurrentPoint, MaxPoint).
+  - Fuera de batalla: la tabla llama a una función nativa (0x523D360) para obtener el
+    CPP_UnitParameter vivo; un lector no puede llamar funciones, así que se escanean los
+    objetos y se usa uno solo si es el único con ese ID en +0xD0 (lo mismo con los ViewModels).
 
 Retratos: imágenes del propio usuario en ~/.local/share/gamepad/portraits/ffrs/
 (ver server/portraits.py). No se incluye arte del juego.
@@ -31,8 +31,6 @@ Retratos: imágenes del propio usuario en ~/.local/share/gamepad/portraits/ffrs/
 La EXP para el siguiente nivel se deriva de las curvas; compárala con el menú.
 """
 import collections
-import re
-import struct
 import time
 
 from server.memory import MemoryReadError
@@ -50,12 +48,10 @@ SAVE_GIL, SAVE_UNITS, SAVE_PARTY = 0x28, 0x60, 0x90
 UNIT_STRIDE, UNIT_EXP = 0xA0, 0x04
 WORLD_SUBSYSTEMS = 0x930
 BTL_UNIT_MANAGER, UNITS_ARRAY, UNIT_PARAMETER, PARAM_CHAR_ID = 0x48, 0x28, 0x838, 0xD0
-KNOWN_BATTLE_OFFSETS = {0xD0, 0x118}      # para validar la reflexión de CPP_BtlUnitParameter
-KNOWN_BASE_OFFSETS = {0xD0}               # CPP_UnitParameter: el Limit solo existe en batalla
-# En el juego real HP/MP NO son UPROPERTY (CPP_UnitParameter solo refleja 4 campos). Candidatos
-# por posición, a verificar con el menú: +0x10C lo usa la tabla CT como "puede actuar si > 0".
-RAW_HP_CANDIDATE, RAW_MP_CANDIDATE = 0x10C, 0x110
-VIEWMODEL_CLASSES = ('CPP_VM_UnitParam', 'CPP_VM_UnitParamPoint', 'VM_UnitParamPoint_C')
+PARAM_HP, PARAM_MP = 0x10C, 0x110         # actual, en CPP_UnitParameter y CPP_BtlUnitParameter
+VM_CLASS = 'CPP_VM_UnitParam'             # ViewModel de la interfaz: da el máximo
+VM_NAMES = ('UnitId', 'HitPointVM', 'MagicPointVM')
+POINT_NAMES = ('CurrentPoint', 'MaxPoint')
 
 NAMES = {1001: 'Rain', 1002: 'Lasswell', 1003: 'Fina', 1004: 'Lid',
          1005: 'Nichol', 1006: 'Archwitch Fina', 1007: 'Jake', 1008: 'Sakura'}
@@ -64,17 +60,8 @@ PORTRAIT_NAMES = {1001: ('rain',), 1002: ('lasswell',), 1003: ('fina',), 1004: (
                   1005: ('nichol',), 1006: ('archwitch_fina', 'dark_fina'), 1007: ('jake',),
                   1008: ('sakura',)}
 
-# Nombres normalizados (minúsculas, sin "m_" ni "_") que se aceptan para cada valor.
-HP_MP_NAMES = {
-    'hp': {'hitpoint', 'hp', 'currenthitpoint', 'nowhitpoint', 'currenthp', 'nowhp'},
-    'hp_max': {'maxhitpoint', 'maxhp', 'hitpointmax', 'hpmax'},
-    'mp': {'magicpoint', 'mp', 'currentmagicpoint', 'nowmagicpoint', 'currentmp', 'nowmp'},
-    'mp_max': {'maxmagicpoint', 'maxmp', 'magicpointmax', 'mpmax'},
-}
-NUMERIC = {'IntProperty': 'i32', 'UInt32Property': 'u32', 'FloatProperty': 'f32',
-           'Int64Property': 'i64', 'DoubleProperty': 'f64', 'Int16Property': 'i16'}
 RESCAN_EVERY = 10.0         # s; solo mientras no hay partida (en el título)
-PARAM_RESCAN_EVERY = 15.0   # s; CPP_UnitParameter de fuera de batalla, si falta alguno
+PARAM_RESCAN_EVERY = 15.0   # s; CPP_UnitParameter / ViewModels, si falta el de algún miembro
 CURVE_RETRY_EVERY = 30.0    # s; curvas de nivel, si aún no se pudieron leer
 
 
@@ -91,10 +78,6 @@ def _party_fields():
     return fields
 
 
-def _norm(name):
-    return re.sub(r'^m_|_', '', name.lower())
-
-
 class Plugin(GamePlugin):
     id = 'ffrs'
     name = 'Final Fantasy Resonance'
@@ -109,7 +92,7 @@ class Plugin(GamePlugin):
         Field('build', 'Ejecutable', kind='text', section='info'),
         Field('dbg_battle', 'Diag. batalla', kind='text', section='info'),
         Field('dbg_curves', 'Diag. curvas', kind='text', section='info'),
-        Field('dbg_hpmp', 'Candidatos HP/MP', kind='text', section='info'),
+        Field('dbg_hpmp', 'Diag. HP/MP', kind='text', section='info'),
     ]
 
     # --- enganche ---
@@ -128,8 +111,10 @@ class Plugin(GamePlugin):
         self.dumped = set()          # clases cuya reflexión ya se escribió en launcher.log
         self.census_done = False
         self.next_scan = 0.0
-        self.hp_offsets = {}         # {clase: ({'hp': (offset, tipo), ...}, descripción)}
         self.field_params = {}       # {id de personaje: CPP_UnitParameter} fuera de batalla
+        self.vms = {}                # {id de personaje: CPP_VM_UnitParam}
+        self.vm_off = None           # offsets de VM_NAMES + POINT_NAMES, por reflexión
+        self.vm_error_logged = False
         self.next_param_scan = 0.0
         self.hp_source = 'esperando datos'
         self.portraits = portraits.Finder(self.id)
@@ -139,7 +124,7 @@ class Plugin(GamePlugin):
     def _find_save(self, world):
         gi = self.ue.mem.ptr(world + WORLD_GAME_INSTANCE)
         t0 = time.monotonic()
-        found = self.ue.scan({'CPP_MuchaSaveDataManager', 'DataTable', 'CPP_UnitParameter'})
+        found = self.ue.scan({'CPP_MuchaSaveDataManager', 'DataTable', 'CPP_UnitParameter', VM_CLASS})
         managers = [m for m in found['CPP_MuchaSaveDataManager'] if self.ue.mem.ptr(m + OBJ_OUTER) == gi]
         print(f'[ffrs] escaneo: {self.ue.object_count()} objetos en {time.monotonic() - t0:.1f} s, '
               f'{len(managers)} gestor(es) de partida', flush=True)
@@ -149,6 +134,7 @@ class Plugin(GamePlugin):
             self.census_done = True
             self._census(found['DataTable'])
         self._set_field_params(found['CPP_UnitParameter'])
+        self._set_vms(found[VM_CLASS])
         self.next_param_scan = time.monotonic() + PARAM_RESCAN_EVERY
         self._try_curves(found['DataTable'])
         return managers[0]
@@ -357,116 +343,87 @@ class Plugin(GamePlugin):
             del self.field_params[char_id]
         return None
 
-    def _refresh_field_params(self, roster_ids):
-        """Reescanea (con límite de frecuencia) si falta el objeto de algún miembro."""
-        if all(self._field_param(cid) for cid in roster_ids) or time.monotonic() < self.next_param_scan:
+    def _refresh_objects(self, roster_ids):
+        """Reescanea (con límite de frecuencia) si falta el parámetro o el ViewModel de algún miembro."""
+        complete = all(self._field_param(cid) and self._vm(cid) for cid in roster_ids)
+        if complete or time.monotonic() < self.next_param_scan:
             return
         self.next_param_scan = time.monotonic() + PARAM_RESCAN_EVERY
         t0 = time.monotonic()
-        self._set_field_params(self.ue.scan({'CPP_UnitParameter'})['CPP_UnitParameter'])
-        print(f'[ffrs] reescaneo de CPP_UnitParameter en {time.monotonic() - t0:.1f} s', flush=True)
+        found = self.ue.scan({'CPP_UnitParameter', VM_CLASS})
+        self._set_field_params(found['CPP_UnitParameter'])
+        self._set_vms(found[VM_CLASS])
+        print(f'[ffrs] reescaneo de parámetros y ViewModels en {time.monotonic() - t0:.1f} s', flush=True)
 
-    # --- HP y MP por reflexión, una vez por clase ---
-    def _resolve_hp_offsets(self, cls):
-        ue = self.ue
-        cls_name = ue.object_name(cls)
-        try:
-            props = ue.properties(cls)
-        except MemoryReadError as ex:
-            # Datos para deducir la disposición a mano: cabecera de la clase y lo que apuntan
-            # los candidatos a ChildProperties.
-            print(f'[ffrs] no se pudo leer la reflexión de {cls_name}: {ex}. Cabecera de la clase:', flush=True)
-            for line in ue.hexdump(cls, 0x80):
-                print(f'  {line}', flush=True)
-            for off in (0x48, 0x50, 0x58, 0x60):
-                ptr = ue.mem.ptr(cls + off)
-                if ptr > 0x10000:
-                    print(f'  clase+0x{off:X} -> 0x{ptr:X}:', flush=True)
-                    for line in ue.hexdump(ptr, 0x60):
-                        print(f'    {line}', flush=True)
-            return {}, f'reflexión de {cls_name} ilegible; ver launcher.log'
-        print(f'[ffrs] propiedades de {cls_name} (nombre, tipo, offset, clase):', flush=True)
-        for name, ftype, offset, owner in props:
-            print(f'  {name:40s} {ftype:20s} 0x{offset:X}  {owner}', flush=True)
-        required = KNOWN_BATTLE_OFFSETS if cls_name == 'CPP_BtlUnitParameter' else KNOWN_BASE_OFFSETS
-        if not required <= {p[2] for p in props}:
-            wanted = '/'.join(f'0x{o:X}' for o in sorted(required))
-            return {}, f'reflexión de {cls_name} no verificada ({wanted} ausentes); ver launcher.log'
-        chosen = {}
-        for key, accepted in HP_MP_NAMES.items():
-            hits = [(off, NUMERIC[t]) for name, t, off, _ in props if _norm(name) in accepted and t in NUMERIC]
-            if len(hits) == 1:
-                chosen[key] = hits[0]
-        missing = sorted(set(HP_MP_NAMES) - set(chosen))
-        found = ', '.join(f'{k}@0x{v[0]:X}' for k, v in sorted(chosen.items()))
-        return chosen, f'por nombre: {found or "ninguno"}' + (
-            f'; faltan {", ".join(missing)} (ver launcher.log)' if missing else '')
-
-    def _hp_mp(self, param):
-        """HP/MP de un parámetro de unidad. Nunca lanza: si falla, el resto de la lectura sigue."""
-        try:
-            cls = self.ue.mem.ptr(param + OBJ_CLASS)
-            if cls not in self.hp_offsets:
-                self.hp_offsets[cls] = self._resolve_hp_offsets(cls)
-            offsets, self.hp_source = self.hp_offsets[cls]
-            if len(offsets) < len(HP_MP_NAMES):
-                self._dump_values(param)
-            return {k: self.ue.mem.value(t, param + off) for k, (off, t) in offsets.items()}
-        except MemoryReadError as ex:
-            self.hp_source = f'error leyendo HP/MP: {ex}'
-            return {}
-
-    def _dump_viewmodels(self):
-        """ViewModels de la interfaz (CPP_VM_UnitParam*): suelen tener actual y máximo con nombre."""
+    # --- máximo de HP/MP: ViewModel de la interfaz ---
+    def _resolve_vm_offsets(self, vm):
+        """(UnitId, HitPointVM, MagicPointVM, CurrentPoint, MaxPoint) por nombre, o None."""
+        if self.vm_off:
+            return self.vm_off
         ue, mem = self.ue, self.ue.mem
-        readers = dict(NUMERIC, ByteProperty='u8', BoolProperty='u8')
-        found = ue.scan(VIEWMODEL_CLASSES)
-        for cls_name in VIEWMODEL_CLASSES:
-            objs = found[cls_name]
-            print(f'[ffrs] viewmodel {cls_name}: {len(objs)} objetos', flush=True)
-            if not objs:
+        try:
+            names = {n: off for n, _, off, _ in ue.properties(mem.ptr(vm + OBJ_CLASS))}
+            point = mem.ptr(vm + names['HitPointVM'])
+            if not point:
+                return None   # aún sin crear: se reintenta
+            pnames = {n: off for n, _, off, _ in ue.properties(mem.ptr(point + OBJ_CLASS))}
+            self.vm_off = tuple(names[n] for n in VM_NAMES) + tuple(pnames[n] for n in POINT_NAMES)
+            print(f'[ffrs] ViewModel: ' + ', '.join(f'{n}@0x{o:X}' for n, o in zip(VM_NAMES + POINT_NAMES, self.vm_off)),
+                  flush=True)
+        except (MemoryReadError, KeyError) as ex:
+            if not self.vm_error_logged:
+                self.vm_error_logged = True
+                print(f'[ffrs] no se pudo resolver el ViewModel por nombre: {ex!r}', flush=True)
+            return None
+        return self.vm_off
+
+    def _set_vms(self, objects):
+        by_id = {}
+        for vm in objects:
+            off = self._resolve_vm_offsets(vm)
+            if not off:
                 continue
-            self._dump_class(objs[0], 'viewmodel')
             try:
-                props = ue.properties(mem.ptr(objs[0] + OBJ_CLASS))
+                by_id.setdefault(self.ue.mem.i32(vm + off[0]), []).append(vm)
             except MemoryReadError:
                 continue
-            for obj in objs[:16]:
-                parts = []
-                for name, ftype, off, _ in props:
-                    try:
-                        if ftype in readers:
-                            parts.append(f'{name}={mem.value(readers[ftype], obj + off)}')
-                        elif ftype == 'ObjectProperty':
-                            ptr = mem.ptr(obj + off)
-                            parts.append(f'{name}->{ue.object_name(ptr) if ptr else "nulo"}')
-                    except MemoryReadError:
-                        parts.append(f'{name}=?')
-                try:
-                    outer = ue.object_name(mem.ptr(obj + OBJ_OUTER))
-                except MemoryReadError:
-                    outer = '?'
-                print(f'  {ue.object_name(obj)} (en {outer}): {", ".join(parts) or "sin campos numéricos"}', flush=True)
+        self.vms = {cid: objs[0] for cid, objs in by_id.items() if cid in NAMES and len(objs) == 1}
+        if objects:
+            print(f'[ffrs] {VM_CLASS}: {len(objects)} objetos; únicos {sorted(self.vms)}', flush=True)
 
-    def _dump_values(self, param):
-        """Una vez por personaje: los int32 del objeto, para buscar el HP/MP del menú a mano."""
+    def _vm(self, char_id):
+        vm = self.vms.get(char_id)
+        if vm is not None:
+            try:
+                if self.ue.live(vm) and self.ue.mem.i32(vm + self.vm_off[0]) == char_id:
+                    return vm
+            except MemoryReadError:
+                pass
+            del self.vms[char_id]
+        return None
+
+    def _hp_mp(self, char_id, param):
+        """{'hp','mp' (actual), 'hp_max','mp_max'} con lo que se pueda leer; nunca lanza.
+        Devuelve también de dónde salió cada dato, para el panel de debug."""
+        mem, out, src = self.ue.mem, {}, []
         try:
-            char_id = self.ue.mem.i32(param + PARAM_CHAR_ID)
-            key = (self.ue.class_name(param), char_id)
-            if key in self.dumped:
-                return
-            self.dumped.add(key)
-            raw = self.ue.mem.read(param, 0x400)
-            if 'viewmodels' not in self.dumped:
-                self.dumped.add('viewmodels')
-                self._dump_viewmodels()
-        except MemoryReadError:
-            return
-        values = struct.unpack('<256i', raw)
-        print(f'[ffrs] valores int32 de {key[0]} de {NAMES.get(char_id, char_id)} '
-              f'(offset: valor; anota el HP/MP que ves en el menú ahora):', flush=True)
-        for row in range(0, 256, 8):
-            print('  ' + '  '.join(f'{(row + i) * 4:03X}:{values[row + i]}' for i in range(8)), flush=True)
+            if param is not None:
+                out['hp'], out['mp'] = mem.i32(param + PARAM_HP), mem.i32(param + PARAM_MP)
+                src.append('actual de la unidad')
+            vm = self._vm(char_id)
+            if vm is not None:
+                _, hp_vm, mp_vm, cur, mx = self.vm_off
+                for key, off in (('hp', hp_vm), ('mp', mp_vm)):
+                    point = mem.ptr(vm + off)
+                    if point:
+                        out[f'{key}_max'] = mem.i32(point + mx)
+                        out.setdefault(key, mem.i32(point + cur))   # sin unidad: el actual de la interfaz
+                src.append('máximo de la interfaz')
+        except MemoryReadError as ex:
+            src.append(f'error: {ex}')
+        # nunca mostrar basura; un máximo de 0 es un ViewModel aún sin rellenar
+        out = {k: v for k, v in out.items() if 0 <= v <= 999999 and not (k.endswith('_max') and v == 0)}
+        return out, src
 
     # --- lectura periódica ---
     def read(self, mem):
@@ -506,31 +463,25 @@ class Plugin(GamePlugin):
         if members:
             roster = members
         else:
-            self._refresh_field_params([cid for cid, _ in roster[:4] if cid in NAMES])
+            self._refresh_objects([cid for cid, _ in roster[:4] if cid in NAMES])
             roster = [(cid, self._field_param(cid)) for cid, _ in roster]
-        if not any(param for _, param in roster[:4]):
-            self.hp_source = 'sin datos de HP/MP' + ('' if members else ' fuera de batalla')
 
         no_exp = [cid for cid, _ in roster[:4] if cid not in exp]
-        raw = []
-        for char_id, param in roster[:4]:
-            if param is not None:
-                try:
-                    raw.append(f'{NAMES.get(char_id, char_id)} {mem.i32(param + RAW_HP_CANDIDATE)}'
-                               f'/{mem.i32(param + RAW_MP_CANDIDATE)}')
-                except MemoryReadError:
-                    raw.append(f'{NAMES.get(char_id, char_id)} ?')
-        values['dbg_hpmp'] = (f'+0x{RAW_HP_CANDIDATE:X}/+0x{RAW_MP_CANDIDATE:X}: ' + ' · '.join(raw)
-                              if raw else 'sin objetos de parámetros todavía')
+        diag, sources = [], set()
         for slot, (char_id, param) in enumerate(roster[:4], 1):
             values[f'p{slot}_name'] = NAMES.get(char_id, f'ID {char_id}')
             values[f'p{slot}_img'] = self.portraits.url(char_id, PORTRAIT_NAMES.get(char_id, ()))
             if char_id in exp:
                 values[f'p{slot}_lv'] = self._level(char_id, exp[char_id])
-            if param is not None:
-                for key, value in self._hp_mp(param).items():
-                    values[f'p{slot}_{key}'] = value
-        values['hp_source'] = self.hp_source if members else f'{self.hp_source} (experimental)'
+            stats, src = self._hp_mp(char_id, param)
+            for key, value in stats.items():
+                values[f'p{slot}_{key}'] = value
+            sources.update(src)
+            diag.append(f"{NAMES.get(char_id, char_id)} HP {stats.get('hp', '—')}/{stats.get('hp_max', '—')}"
+                        f" MP {stats.get('mp', '—')}/{stats.get('mp_max', '—')}")
+        values['hp_source'] = (' + '.join(sorted(sources)) if sources else 'sin objetos de HP/MP todavía') + (
+            ' (batalla)' if members else ' (fuera de batalla)')
+        values['dbg_hpmp'] = ' · '.join(diag)
         values['dbg_battle'] = self.battle_diag
         values['dbg_curves'] = self.curves_diag + (f'; sin EXP en la partida para {no_exp}' if no_exp else '')
         values['status'] = 'Lectura OK'

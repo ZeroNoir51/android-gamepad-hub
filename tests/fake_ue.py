@@ -5,10 +5,11 @@ FFRS_Steam_24250053_Starter.CT (ver docstrings de esos módulos). Sirve para pro
 el lector y el plugin sin el juego: cada test arma un escenario con FakeGame y
 lee con el plugin real.
 
-Lo que NO está verificado en el juego real (y aquí es una suposición del arnés):
-- la disposición de la reflexión (ChildProperties +0x50, FField...);
-- los nombres y offsets de HP/MP (HP_PROPS por defecto);
-- que CPP_BtlUnitParameter herede de CPP_UnitParameter.
+Verificado con launcher.log del juego real (y reproducido aquí):
+- reflexión de CPP_UnitParameter: solo PARAM_PROPS (HP/MP no son UPROPERTY);
+- HP/MP actual en +0x10C/+0x110 del parámetro; máximo en el ViewModel CPP_VM_UnitParam
+  (UnitId 0x68, HitPointVM 0x90, MagicPointVM 0x98) -> CPP_VM_Point (CurrentPoint 0xB8, MaxPoint 0xBC).
+La disposición de la reflexión es configurable (FakeGame(layout=...)).
 """
 import struct
 
@@ -23,15 +24,24 @@ RVA = {'gnames_rva': 0x9CA1280, 'gobjects_rva': 0x9D84DD0, 'gworld_rva': 0x9AA05
 RF_CLASS_DEFAULT = U.RF_CLASS_DEFAULT
 RF_BEGIN_DESTROYED = 0x8000
 
-# Propiedades por defecto: (nombre, tipo, offset, clase dueña)
-HP_PROPS = [
-    ('CharacterId', 'IntProperty', 0xD0, 'CPP_UnitParameter'),
-    ('HitPoint', 'IntProperty', 0xE0, 'CPP_UnitParameter'),
-    ('MaxHitPoint', 'IntProperty', 0xE4, 'CPP_UnitParameter'),
-    ('MagicPoint', 'IntProperty', 0xE8, 'CPP_UnitParameter'),
-    ('MaxMagicPoint', 'IntProperty', 0xEC, 'CPP_UnitParameter'),
-    ('LimitGauge', 'IntProperty', 0x118, 'CPP_BtlUnitParameter'),
-    ('LimitGaugeMax', 'IntProperty', 0x2A0, 'CPP_BtlUnitParameter'),
+# Propiedades reflejadas de verdad en el juego: (nombre, tipo, offset, clase dueña)
+PARAM_PROPS = [
+    ('m_ContEffectList', 'ArrayProperty', 0xB8, 'CPP_UnitParameter'),
+    ('m_ActiveSkillTargets', 'ArrayProperty', 0x270, 'CPP_UnitParameter'),
+    ('UnitName', 'TextProperty', 0x288, 'CPP_UnitParameter'),
+    ('UnitNameDA', 'ObjectProperty', 0x298, 'CPP_UnitParameter'),
+    ('m_pOwnerBtlUnit', 'ObjectProperty', 0x360, 'CPP_BtlUnitParameter'),
+]
+VM_PROPS = [
+    ('UnitId', 'IntProperty', 0x68, 'CPP_VM_UnitBase'),
+    ('UnitParam', 'ObjectProperty', 0x70, 'CPP_VM_UnitBase'),
+    ('HitPointVM', 'ObjectProperty', 0x90, 'CPP_VM_UnitParam'),
+    ('MagicPointVM', 'ObjectProperty', 0x98, 'CPP_VM_UnitParam'),
+    ('LimitPointVM', 'ObjectProperty', 0xA0, 'CPP_VM_UnitParam'),
+    ('CurrentPoint', 'IntProperty', 0xB8, 'CPP_VM_Point'),
+    ('MaxPoint', 'IntProperty', 0xBC, 'CPP_VM_Point'),
+    ('bEnablePredict', 'BoolProperty', 0xC8, 'CPP_VM_PredictPoint'),
+    ('Multiplier', 'FloatProperty', 0x11C, 'CPP_VM_UnitParamPoint'),
 ]
 
 
@@ -252,14 +262,16 @@ def cumulative(level):
 
 
 def build_ffrs(game=None, *, party=(1001, 1002), units=None, gil=12345,
-               battle=None, field=None, props=HP_PROPS, curve_for=None, save=True,
-               world_class='World', enemy_table=False):
+               battle=None, field=None, props=PARAM_PROPS, vms=None, vm_props=VM_PROPS,
+               curve_for=None, save=True, world_class='World', enemy_table=False):
     """Escenario completo de FFRS.
 
     party: IDs del equipo (SaveData +0x90).
     units: {id: exp}; por defecto, los del equipo con EXP para nivel 5 y 10.
     battle: None (fuera de batalla) o [(id, {'hp':..,'hp_max':..,'mp':..,'mp_max':..})].
     field: CPP_UnitParameter vivos fuera de batalla, con el mismo formato que battle.
+    vms: ViewModels CPP_VM_UnitParam [(id, stats)]; por defecto, uno por personaje de
+         field y battle (sin repetir). [] = ninguno.
     curve_for: IDs con curva de nivel; por defecto los 8 personajes.
     """
     g = game or FakeGame()
@@ -267,12 +279,18 @@ def build_ffrs(game=None, *, party=(1001, 1002), units=None, gil=12345,
     g.cls('Engine')
     g.cls('CPP_UnitParameter', 'Object')
     g.cls('CPP_BtlUnitParameter', 'CPP_UnitParameter')
-    if props is not None:
+    g.cls('CPP_VM_UnitBase', 'Object')
+    g.cls('CPP_VM_UnitParam', 'CPP_VM_UnitBase')
+    g.cls('CPP_VM_Point', 'Object')
+    g.cls('CPP_VM_PredictPoint', 'CPP_VM_Point')
+    g.cls('CPP_VM_UnitParamPoint', 'CPP_VM_PredictPoint')
+    g.cls('VM_UnitParamPoint_C', 'CPP_VM_UnitParamPoint')
+    for plist in (props, vm_props):
         by_owner = {}
-        for name, ftype, off, owner in props:
+        for name, ftype, off, owner in plist or ():
             by_owner.setdefault(owner, []).append((name, ftype, off))
-        for owner, plist in by_owner.items():
-            g.props(owner, plist)
+        for owner, items in by_owner.items():
+            g.props(owner, items)
 
     world = g.obj('Mucha_World', world_class, size=0x1000)
     gi = g.obj('GameInstance_0', 'CPP_MuchaGameInstance', outer=world)
@@ -328,7 +346,23 @@ def build_ffrs(game=None, *, party=(1001, 1002), units=None, gil=12345,
         m.put('u64', e + 8, obj)
     g.field_params = [unit_parameter(g, 'CPP_UnitParameter', cid, stats, outer=g.gi)
                       for cid, stats in (field or ())]
+    if vms is None:
+        vms = list({cid: stats for cid, stats in list(battle or ()) + list(field or ())}.items())
+    manager = g.obj('CPP_UnitVMManager_0', 'CPP_UnitVMManager', outer=g.gi)
+    g.vms = [viewmodel(g, cid, stats, outer=manager) for cid, stats in vms]
     return g
+
+
+def viewmodel(g, cid, stats, outer=0):
+    """CPP_VM_UnitParam con HitPointVM / MagicPointVM (CurrentPoint, MaxPoint)."""
+    vm = g.obj(f'CPP_VM_UnitParam_{cid}_{len(g.objects)}', 'CPP_VM_UnitParam', outer=outer)
+    g.mem.put('i32', vm + 0x68, cid)
+    for key, off in (('hp', 0x90), ('mp', 0x98)):
+        point = g.obj(f'VM_UnitParamPoint_C_{len(g.objects)}', 'VM_UnitParamPoint_C', outer=vm)
+        g.mem.put('i32', point + 0xB8, stats.get(key, 0))
+        g.mem.put('i32', point + 0xBC, stats.get(f'{key}_max', 0))
+        g.mem.put('u64', vm + off, point)
+    return vm
 
 
 def level_table(g):
@@ -343,10 +377,10 @@ def add_curves(g, level_tables):
 
 
 def unit_parameter(g, cls, cid, stats, outer=0):
-    """CPP_UnitParameter o CPP_BtlUnitParameter con ID en +0xD0 y HP/MP en HP_PROPS."""
+    """CPP_UnitParameter o CPP_BtlUnitParameter: ID en +0xD0, HP/MP actual en +0x10C/+0x110."""
     param = g.obj(f'{cls}_{cid}_{len(g.objects)}', cls, outer=outer)
     g.mem.put('i32', param + 0xD0, cid)
-    for key, off in (('hp', 0xE0), ('hp_max', 0xE4), ('mp', 0xE8), ('mp_max', 0xEC)):
+    for key, off in (('hp', 0x10C), ('mp', 0x110)):
         if key in stats:
             g.mem.put('i32', param + off, stats[key])
     return param

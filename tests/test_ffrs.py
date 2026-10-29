@@ -1,5 +1,5 @@
 """Plugin FFRS contra la memoria sintética: los casos de la sección 10 del HANDOFF."""
-from fake_ue import HP_PROPS, FakeGame, build_ffrs, cumulative, kill, unit_parameter
+from fake_ue import FakeGame, build_ffrs, cumulative, kill, unit_parameter, viewmodel
 
 STATS = {1001: {'hp': 1200, 'hp_max': 1500, 'mp': 30, 'mp_max': 60},
          1002: {'hp': 800, 'hp_max': 1000, 'mp': 40, 'mp_max': 90}}
@@ -26,8 +26,8 @@ def test_fuera_de_batalla_equipo_de_2(attach):
     assert v['p1_lv'] == 'Nv 5 · faltan 600 EXP'
     assert v['p2_lv'] == 'Nv 10 · faltan 1.100 EXP'
     assert not party(v, 3) and not party(v, 4)
-    assert hp(v, 1) == (None,) * 4                    # sin CPP_UnitParameter: sin HP
-    assert v['hp_source'] == 'sin datos de HP/MP fuera de batalla (experimental)'
+    assert hp(v, 1) == (None,) * 4                    # sin parámetros ni ViewModels: sin HP
+    assert v['hp_source'] == 'sin objetos de HP/MP todavía (fuera de batalla)'
 
 
 def test_nivel_maximo_y_parcial(attach):
@@ -71,7 +71,7 @@ def test_build_distinta_no_lee(attach):
     assert 'gil' not in v and 'p1_name' not in v
 
 
-# --- batalla ---
+# --- HP/MP: actual de la unidad (+0x10C/+0x110), máximo del ViewModel ---
 
 def test_en_batalla_hp_mp_y_orden(attach):
     g = build_ffrs(party=(1001, 1002), battle=[(1002, STATS[1002]), (1001, STATS[1001])])
@@ -82,31 +82,56 @@ def test_en_batalla_hp_mp_y_orden(attach):
     assert hp(v, 1) == (800, 1000, 40, 90)
     assert hp(v, 2) == (1200, 1500, 30, 60)
     assert v['p1_lv'] == 'Nv 10 · faltan 1.100 EXP'                  # la EXP sigue al ID
-    assert v['hp_source'] == 'por nombre: hp@0xE0, hp_max@0xE4, mp@0xE8, mp_max@0xEC'
-    assert plugin.read(g.mem)['p1_hp'] == 800                         # offsets en caché
+    assert v['hp_source'] == 'actual de la unidad + máximo de la interfaz (batalla)'
+    assert v['dbg_hpmp'] == 'Lasswell HP 800/1000 MP 40/90 · Rain HP 1200/1500 MP 30/60'
 
 
-def test_reflexion_de_batalla_no_verificada(attach):
-    props = [p for p in HP_PROPS if p[2] != 0x118]
-    g = build_ffrs(battle=[(1001, STATS[1001])], props=props)
+def test_hp_actual_en_vivo_aunque_la_interfaz_no_cambie(attach):
+    g = build_ffrs(party=(1001,), battle=[(1001, STATS[1001])])
+    plugin = attach(g)
+    param = g.mem.ptr(g.mem.ptr(g.mem.ptr(next(o for o in g.objects
+                                              if g.mem.u32(o + 0x18) == g.fname_index('CPP_BtlUnitManager_0')) + 0x28)) + 0x838)
+    g.mem.put('i32', param + 0x10C, 777)                                # golpe en batalla
+    assert hp(plugin.read(g.mem), 1) == (777, 1500, 30, 60)
+
+
+def test_hp_mp_fuera_de_batalla(attach):
+    g = build_ffrs(party=(1001, 1002), field=[(1001, STATS[1001]), (1002, STATS[1002])])
     v = attach(g).read(g.mem)
-    assert v['hp_source'].startswith('reflexión de CPP_BtlUnitParameter no verificada')
-    assert v['p1_name'] == 'Rain'
-    assert hp(v, 1) == (None,) * 4
+    assert v['battle'] == 'fuera de batalla'
+    assert hp(v, 1) == (1200, 1500, 30, 60)
+    assert hp(v, 2) == (800, 1000, 40, 90)
+    assert v['hp_source'] == 'actual de la unidad + máximo de la interfaz (fuera de batalla)'
 
 
-def test_reflexion_ausente_no_rompe_la_lectura(attach, capsys):
-    # En el juego real la reflexión no se podía leer y eso tumbaba TODA la lectura
-    # (Gil congelado, "dirección inválida 0x0" en rojo). Ahora solo faltan HP/MP.
-    g = build_ffrs(party=(1001, 1002), battle=[(1001, STATS[1001])], props=None)
+def test_sin_viewmodel_solo_actual(attach):
+    g = build_ffrs(party=(1001,), field=[(1001, STATS[1001])], vms=[])
+    v = attach(g).read(g.mem)
+    assert hp(v, 1) == (1200, None, 30, None)
+    assert v['hp_source'] == 'actual de la unidad (fuera de batalla)'
+
+
+def test_sin_parametro_usa_la_interfaz(attach):
+    g = build_ffrs(party=(1001,), vms=[(1001, STATS[1001])])
+    assert hp(attach(g).read(g.mem), 1) == (1200, 1500, 30, 60)
+
+
+def test_viewmodel_sin_nombres_esperados(attach, capsys):
+    vm_props = [p for p in __import__('fake_ue').VM_PROPS if p[0] != 'MaxPoint']
+    g = build_ffrs(party=(1001,), field=[(1001, STATS[1001])], vm_props=vm_props)
+    v = attach(g).read(g.mem)
+    assert hp(v, 1) == (1200, None, 30, None)                           # el actual sigue saliendo
+    assert "no se pudo resolver el ViewModel por nombre: KeyError('MaxPoint')" in capsys.readouterr().out
+
+
+def test_sin_reflexion_no_rompe_la_lectura(attach):
+    # En el juego real la reflexión falló al principio y eso tumbaba TODA la lectura
+    # (Gil congelado, "dirección inválida 0x0" en rojo). Ahora solo falta el máximo.
+    g = build_ffrs(party=(1001, 1002), battle=[(1001, STATS[1001])], props=None, vm_props=None)
     v = attach(g).read(g.mem)
     assert v['status'] == 'Lectura OK' and v['gil'] == 12345
     assert v['battle'] == 'en batalla (1)'
-    assert 'ilegible' in v['hp_source']
-    assert hp(v, 1) == (None,) * 4
-    out = capsys.readouterr().out
-    assert 'Cabecera de la clase' in out
-    assert 'valores int32 de CPP_BtlUnitParameter de Rain' in out and '0E0:1200' in out
+    assert hp(v, 1) == (1200, None, 30, None)
 
 
 def test_disposicion_de_reflexion_alternativa(attach):
@@ -119,58 +144,36 @@ def test_disposicion_de_reflexion_alternativa(attach):
         assert plugin.ue.layout == layout
 
 
-def test_nombres_ambiguos_se_descartan(attach):
-    props = HP_PROPS + [('CurrentHP', 'IntProperty', 0xF0, 'CPP_UnitParameter')]
-    g = build_ffrs(battle=[(1001, STATS[1001])], props=props)
-    v = attach(g).read(g.mem)
-    assert hp(v, 1) == (None, 1500, 30, 60)
-    assert 'faltan hp' in v['hp_source']
-
-
-# --- fuera de batalla (experimental) ---
-
-def test_hp_mp_fuera_de_batalla(attach):
-    g = build_ffrs(party=(1001, 1002), field=[(1001, STATS[1001]), (1002, STATS[1002])])
-    v = attach(g).read(g.mem)
-    assert v['battle'] == 'fuera de batalla'
-    assert hp(v, 1) == (1200, 1500, 30, 60)
-    assert hp(v, 2) == (800, 1000, 40, 90)
-    assert v['hp_source'] == 'por nombre: hp@0xE0, hp_max@0xE4, mp@0xE8, mp_max@0xEC (experimental)'
-
-
-def test_fuera_de_batalla_basta_0xD0(attach):
-    # Sin la propiedad Limit (0x118) la clase de batalla no se valida, pero la base sí
-    props = [p for p in HP_PROPS if p[2] != 0x118]
-    g = build_ffrs(party=(1001,), field=[(1001, STATS[1001])], props=props)
-    assert hp(attach(g).read(g.mem), 1) == (1200, 1500, 30, 60)
-
-
-def test_fuera_de_batalla_sin_0xD0_no_lee(attach):
-    props = [p for p in HP_PROPS if p[2] != 0xD0]
-    g = build_ffrs(party=(1001,), field=[(1001, STATS[1001])], props=props)
-    v = attach(g).read(g.mem)
-    assert hp(v, 1) == (None,) * 4
-    assert 'reflexión de CPP_UnitParameter no verificada' in v['hp_source']
+def test_valores_absurdos_no_se_muestran(attach):
+    g = build_ffrs(party=(1001,), field=[(1001, {'hp': -5, 'mp': 30})], vms=[(1001, {'hp_max': 10**9, 'mp_max': 60})])
+    assert hp(attach(g).read(g.mem), 1) == (None, None, 30, 60)
+    g = build_ffrs(party=(1001,), field=[(1001, {'hp': 5, 'mp': 3})], vms=[(1001, {'hp_max': 0, 'mp_max': 0})])
+    assert hp(attach(g).read(g.mem), 1) == (5, None, 3, None)          # máximo 0: aún sin datos
 
 
 def test_fuera_de_batalla_id_duplicado_se_descarta(attach):
     g = build_ffrs(party=(1001, 1002),
-                   field=[(1001, STATS[1001]), (1001, {'hp': 1}), (1002, STATS[1002])])
+                   field=[(1001, STATS[1001]), (1001, {'hp': 1}), (1002, STATS[1002])],
+                   vms=[(1002, STATS[1002])])
     v = attach(g).read(g.mem)
-    assert hp(v, 1) == (None,) * 4                    # dos objetos con 1001: no se elige
+    assert hp(v, 1) == (None,) * 4                    # dos objetos con 1001 y sin ViewModel
     assert hp(v, 2) == (800, 1000, 40, 90)
 
 
+def test_viewmodel_duplicado_se_descarta(attach):
+    g = build_ffrs(party=(1001,), field=[(1001, STATS[1001])], vms=[(1001, STATS[1001]), (1001, {'hp_max': 1})])
+    assert hp(attach(g).read(g.mem), 1) == (1200, None, 30, None)
+
+
 def test_batalla_tiene_prioridad(attach):
-    g = build_ffrs(party=(1001,), field=[(1001, {'hp': 1, 'hp_max': 2, 'mp': 3, 'mp_max': 4})],
-                   battle=[(1001, STATS[1001])])
+    g = build_ffrs(party=(1001,), field=[(1001, {'hp': 1, 'mp': 3})], battle=[(1001, STATS[1001])],
+                   vms=[(1001, STATS[1001])])
     v = attach(g).read(g.mem)
     assert hp(v, 1) == (1200, 1500, 30, 60)
-    assert not v['hp_source'].endswith('(experimental)')
 
 
 def test_objeto_destruido_y_reescaneo(attach):
-    g = build_ffrs(party=(1001, 1002), field=[(1001, STATS[1001]), (1002, STATS[1002])])
+    g = build_ffrs(party=(1001, 1002), field=[(1001, STATS[1001]), (1002, STATS[1002])], vms=[])
     plugin = attach(g)
     assert hp(plugin.read(g.mem), 1)[0] == 1200
     kill(g, g.field_params[0])                        # p. ej. cambio de mapa
@@ -178,17 +181,28 @@ def test_objeto_destruido_y_reescaneo(attach):
     assert hp(v, 1) == (None,) * 4                    # nunca un dato de un objeto muerto
     assert hp(v, 2)[0] == 800
     # El juego crea uno nuevo; aparece al reescanear (limitado en frecuencia)
-    unit_parameter(g, 'CPP_UnitParameter', 1001, {'hp': 999, 'hp_max': 1500}, outer=g.gi)
+    unit_parameter(g, 'CPP_UnitParameter', 1001, {'hp': 999}, outer=g.gi)
+    plugin.next_param_scan = float('inf')
     assert plugin.read(g.mem).get('p1_hp') is None    # todavía dentro del límite
     plugin.next_param_scan = 0
     assert plugin.read(g.mem)['p1_hp'] == 999
 
 
+def test_viewmodel_aparece_despues(attach):
+    g = build_ffrs(party=(1001,), field=[(1001, STATS[1001])], vms=[])
+    plugin = attach(g)
+    assert hp(plugin.read(g.mem), 1)[1] is None
+    viewmodel(g, 1001, STATS[1001])
+    plugin.next_param_scan = 0
+    assert hp(plugin.read(g.mem), 1) == (1200, 1500, 30, 60)
+
+
 def test_id_cambiado_en_el_objeto(attach):
-    g = build_ffrs(party=(1001,), field=[(1001, STATS[1001])])
+    g = build_ffrs(party=(1001,), field=[(1001, STATS[1001])], vms=[])
     plugin = attach(g)
     assert plugin.read(g.mem)['p1_hp'] == 1200
     g.mem.put('i32', g.field_params[0] + 0xD0, 1003)  # el objeto ahora es de otro personaje
+    plugin.next_param_scan = float('inf')
     assert plugin.read(g.mem).get('p1_hp') is None
 
 
@@ -264,21 +278,3 @@ def test_censo_en_el_log(attach, capsys):
     out = capsys.readouterr().out
     assert '       1  CPP_UnitParameter' in out
     assert '       1  UNIT_LEVEL_PARAMETER_LIST' in out and '       8  UNIT_LEVEL_PARAMETER' in out
-
-
-def test_candidatos_hp_mp_y_viewmodels(attach, capsys):
-    from fake_ue import unit_parameter
-    g = build_ffrs(party=(1001, 1002), field=[(1001, {}), (1002, {})], props=[])
-    rain, lass = g.field_params
-    g.mem.put('i32', rain + 0x10C, 270); g.mem.put('i32', rain + 0x110, 35)
-    g.mem.put('i32', lass + 0x10C, 240); g.mem.put('i32', lass + 0x110, 40)
-    g.cls('CPP_VM_UnitParamPoint', 'Object')
-    g.props('CPP_VM_UnitParamPoint', [('CurrentValue', 'IntProperty', 0x30), ('MaxValue', 'IntProperty', 0x34)])
-    vm = g.obj('VM_HP_0', 'CPP_VM_UnitParamPoint', outer=rain)
-    g.mem.put('i32', vm + 0x30, 270); g.mem.put('i32', vm + 0x34, 300)
-    v = attach(g).read(g.mem)
-    assert v['dbg_hpmp'] == '+0x10C/+0x110: Rain 270/35 · Lasswell 240/40'
-    assert hp(v, 1) == (None,) * 4                 # sin verificar: no se muestran como HP/MP
-    out = capsys.readouterr().out
-    assert 'viewmodel CPP_VM_UnitParamPoint: 1 objetos' in out
-    assert 'VM_HP_0 (en CPP_UnitParameter_1001_' in out and 'CurrentValue=270, MaxValue=300' in out

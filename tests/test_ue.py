@@ -95,5 +95,5 @@ def test_properties_recorre_herencia():
     g = build_ffrs()
     ue = reader(g)
     props = ue.properties(g.cls('CPP_BtlUnitParameter'))
-    assert ('LimitGauge', 'IntProperty', 0x118, 'CPP_BtlUnitParameter') in props
-    assert ('CharacterId', 'IntProperty', 0xD0, 'CPP_UnitParameter') in props
+    assert ('m_pOwnerBtlUnit', 'ObjectProperty', 0x360, 'CPP_BtlUnitParameter') in props
+    assert ('UnitName', 'TextProperty', 0x288, 'CPP_UnitParameter') in props   # heredada
