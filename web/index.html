@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#15171c">
+<title>PS5 GamePad Hub</title>
+<style>
+:root{
+  --bg:#15171c; --panel:#1d2027; --line:#2b2f39; --text:#ebe7dd; --muted:#8c919c;
+  --amber:#ffb547; --cyan:#5fd0e0; --bad:#ff6b5b; --ok:#7bd88f;
+  --hp:#ef5b5b; --mp:#5b8def; --gold:#e9c46a; --xp:#a98bf0; --neutral:#c9c5bb;
+  --num:"Bahnschrift","DIN Alternate","Roboto Condensed","Arial Narrow",sans-serif-condensed,system-ui,sans-serif;
+  --ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.4 var(--ui);user-select:none;-webkit-user-select:none;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  overflow:hidden;touch-action:manipulation}
+button{font:inherit;color:inherit}
+.num{font-family:var(--num);font-variant-numeric:tabular-nums}
+
+/* barra superior */
+.top{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid var(--line);height:44px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--bad);flex:none}
+.dot.on{background:var(--ok)}
+.conn{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conn small{color:var(--muted);margin-left:6px}
+.spacer{flex:1}
+.rtt{color:var(--cyan);font-size:15px;white-space:nowrap}
+.tbtn{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:14px}
+.tbtn:focus-visible,.tbtn:hover{border-color:var(--muted)}
+
+/* cuerpo */
+.main{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);height:calc(100% - 44px - 30px)}
+@media (orientation:portrait){.main{grid-template-columns:1fr;grid-template-rows:auto 1fr;overflow:auto}}
+.sys{padding:14px 18px;display:flex;flex-direction:column;gap:12px;min-height:0;border-right:1px solid var(--line)}
+@media (orientation:portrait){.sys{border-right:0;border-bottom:1px solid var(--line)}}
+
+.fpsrow{display:flex;align-items:flex-end;gap:14px}
+.fps{font-size:clamp(64px,15vh,128px);line-height:.82;color:var(--amber);letter-spacing:-.02em}
+.fps.idle{color:var(--line)}
+.fpsmeta{padding-bottom:4px;color:var(--muted);font-size:14px}
+.fpsmeta b{display:block;color:var(--text);font-size:22px;font-weight:500}
+.chart{flex:1;min-height:70px;position:relative}
+.chart canvas{position:absolute;inset:0;width:100%;height:100%}
+.readouts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.mh{color:var(--amber);font-size:13px;margin-top:-6px}
+.ro{background:var(--bg);padding:7px 10px}
+.ro span{display:block;color:var(--muted);font-size:12px}
+.ro b{font-family:var(--num);font-variant-numeric:tabular-nums;font-size:21px;font-weight:500}
+.ro b.hot{color:var(--bad)}
+
+/* juego */
+.game{padding:12px 16px;display:flex;flex-direction:column;gap:10px;min-height:0;overflow:auto}
+.game h2{margin:0;font:600 19px/1.2 var(--ui)}
+.game .sub{color:var(--muted);font-size:13px;margin-top:2px}
+.gfields{display:flex;flex-direction:column;gap:14px}
+.gf .lab{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;color:var(--muted)}
+.gf .lab b{font-family:var(--num);font-variant-numeric:tabular-nums;color:var(--text);font-size:22px;font-weight:500}
+.gf .lab b small{color:var(--muted);font-size:15px}
+.track{height:10px;background:var(--panel);border-radius:2px;margin-top:5px;overflow:hidden}
+.fill{height:100%;width:0;background:var(--tone);transition:width .2s linear}
+.gnums{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px}
+.gnum span{display:block;color:var(--muted);font-size:13px}
+.gnum b{font-family:var(--num);font-variant-numeric:tabular-nums;font-size:24px;font-weight:500;color:var(--tone)}
+.empty{color:var(--muted);font-size:14px;max-width:34ch}
+.gerr{color:var(--bad);font-size:13px}
+
+/* sin juego: la telemetría ocupa todo el ancho */
+body.nogame .main{grid-template-columns:1fr}
+body.nogame .game{display:none}
+body.nogame .sys{border:0}
+/* secciones del plugin */
+.party{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px}
+.member{display:flex;flex-direction:column;gap:1px;min-width:0}
+.member .gf .lab{font-size:12.5px}
+.member .note{font-size:12px;color:var(--muted);margin-top:-1px}
+.member .who{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.member .gf .lab b{font-size:15px}
+.member .track{height:7px;margin-top:3px}
+.info{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:12.5px;color:var(--muted);margin:0}
+.info dt{color:var(--muted)}
+.info dd{margin:0;color:var(--text);overflow-wrap:anywhere}
+.foot{height:30px;padding:6px 14px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.foot.warn{color:var(--amber)}
+
+/* mando táctil */
+.touch{position:fixed;inset:0;background:var(--bg);display:none;flex-direction:column;padding:env(safe-area-inset-top) 10px env(safe-area-inset-bottom);touch-action:none}
+body.touchmode .touch{display:flex}
+.trow{display:flex;justify-content:space-between;align-items:center;padding:8px 4px}
+.pad{flex:1;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px}
+.col{display:flex;flex-direction:column;align-items:center;gap:10px}
+.stick{position:relative;width:min(34vw,36vh,170px);aspect-ratio:1;border-radius:50%;background:var(--panel);border:1px solid var(--line);touch-action:none}
+.knob{position:absolute;left:50%;top:50%;width:42%;height:42%;border-radius:50%;background:#3a4150;transform:translate(-50%,-50%);pointer-events:none}
+.grid3{display:grid;grid-template-columns:repeat(3,48px);grid-template-rows:repeat(3,48px)}
+.b{background:var(--panel);border:1px solid var(--line);border-radius:10px;min-width:48px;min-height:40px;font-weight:600;touch-action:none}
+.b.round{border-radius:50%}
+.b.on{background:var(--amber);color:#1a1408;border-color:var(--amber)}
+.center{display:flex;gap:8px}
+
+/* acceso */
+.login{position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;padding:20px;z-index:10}
+body.locked .login{display:flex}
+.login form{display:flex;flex-direction:column;gap:12px;width:min(320px,100%)}
+.login h1{margin:0;font:600 20px/1.25 var(--ui)}
+.login p{margin:0;color:var(--muted);font-size:14px}
+.code{font:500 40px/1 var(--num);letter-spacing:.35em;text-transform:uppercase;text-align:center;
+  background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:12px 0 12px .35em;width:100%}
+.code:focus{outline:2px solid var(--amber);outline-offset:1px}
+.go{background:var(--amber);color:#1a1408;border:0;border-radius:8px;padding:12px;font-weight:600;font-size:16px}
+.go:disabled{opacity:.5}
+.lerr{color:var(--bad);font-size:14px;min-height:1.4em}
+</style>
+</head>
+<body>
+<div class="login" id="login">
+  <form id="loginForm" autocomplete="off">
+    <h1>Conectar con el servidor</h1>
+    <p>Escribe el código de 4 letras que muestra la terminal del servidor. No se volverá a pedir en 24 horas.</p>
+    <input class="code" id="code" maxlength="4" autocapitalize="characters" spellcheck="false" inputmode="text" aria-label="Código de acceso" required>
+    <button class="go" id="goBtn" type="submit">Entrar</button>
+    <div class="lerr" id="lerr" role="alert"></div>
+  </form>
+</div>
+
+<header class="top">
+  <span class="dot" id="dot"></span>
+  <span class="conn" id="conn">Sin conexión</span>
+  <span class="spacer"></span>
+  <span class="rtt num" id="rtt" title="Ida y vuelta por Wi-Fi">— ms</span>
+  <button class="tbtn" id="touchBtn">Mando táctil</button>
+</header>
+
+<main class="main">
+  <section class="sys" aria-label="Rendimiento">
+    <div class="fpsrow">
+      <div class="fps num idle" id="fps">--</div>
+      <div class="fpsmeta">FPS<b class="num" id="ft">— ms</b></div>
+    </div>
+    <div class="chart"><canvas id="chart"></canvas></div>
+    <div class="mh" id="mh" hidden></div>
+    <div class="readouts">
+      <div class="ro"><span>CPU</span><b id="cpuLoad">—</b></div>
+      <div class="ro"><span>CPU temp.</span><b id="cpuTemp">—</b></div>
+      <div class="ro"><span>RAM</span><b id="mem">—</b></div>
+      <div class="ro"><span>GPU</span><b id="gpuLoad">—</b></div>
+      <div class="ro"><span>GPU temp.</span><b id="gpuTemp">—</b></div>
+      <div class="ro"><span>Jitter</span><b id="jitter">—</b></div>
+    </div>
+  </section>
+
+  <section class="game" aria-label="Juego">
+    <div><h2 id="gname">Sin juego detectado</h2><div class="sub" id="gsub"></div></div>
+    <div class="party" id="gparty"></div>
+    <div class="gfields" id="gbars"></div>
+    <div class="gnums" id="gnums"></div>
+    <dl class="info" id="ginfo"></dl>
+    <p class="empty" id="gempty">Abre un juego que tenga plugin y aquí aparecerán sus datos.</p>
+    <div class="gerr" id="gerr"></div>
+  </section>
+</main>
+
+<footer class="foot" id="foot">Pulsa un botón del mando para detectarlo.</footer>
+
+<div class="touch" id="touch">
+  <div class="trow">
+    <div class="center"><button class="b" data-b="lb">LB</button><button class="b" data-b="lt">LT</button></div>
+    <button class="tbtn" id="closeTouch">Volver al panel</button>
+    <div class="center"><button class="b" data-b="rt">RT</button><button class="b" data-b="rb">RB</button></div>
+  </div>
+  <div class="pad">
+    <div class="col">
+      <div class="stick" data-stick="l"><div class="knob"></div></div>
+      <div class="grid3">
+        <span></span><button class="b" data-b="up">↑</button><span></span>
+        <button class="b" data-b="left">←</button><button class="b" data-b="ls">L3</button><button class="b" data-b="right">→</button>
+        <span></span><button class="b" data-b="down">↓</button><span></span>
+      </div>
+    </div>
+    <div class="col">
+      <div class="center"><button class="b" data-b="back">Back</button><button class="b" data-b="guide">Guide</button><button class="b" data-b="start">Start</button></div>
+    </div>
+    <div class="col">
+      <div class="grid3">
+        <span></span><button class="b round" data-b="y">Y</button><span></span>
+        <button class="b round" data-b="x">X</button><button class="b" data-b="rs">R3</button><button class="b round" data-b="b">B</button>
+        <span></span><button class="b round" data-b="a">A</button><span></span>
+      </div>
+      <div class="stick" data-stick="r"><div class="knob"></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const KEYS = ['a','b','x','y','lb','rb','back','start','guide','ls','rs','lx','ly','rx','ry','lt','rt','dx','dy'];
+const state = Object.fromEntries(KEYS.map(k => [k, 0]));
+let ws = null, retryMs = 1000, mode = 'physical', host = '';
+
+/* ---------- conexión ---------- */
+function setConn(text, on) { $('#conn').innerHTML = text; $('#dot').classList.toggle('on', !!on); }
+function foot(text, warn) { const f = $('#foot'); f.textContent = text; f.classList.toggle('warn', !!warn); }
+
+async function hasSession() {
+  try { return (await (await fetch('/api/session', {cache: 'no-store'})).json()).ok; }
+  catch { return null; }   // servidor caído: no sabemos
+}
+
+function lock(msg) {
+  document.body.classList.add('locked');
+  $('#lerr').textContent = msg || '';
+  setConn('Sin sesión');
+  setTimeout(() => $('#code').focus(), 50);
+}
+
+async function login(code) {
+  const r = await fetch('/api/login', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                        body: JSON.stringify({token: code})});
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.msg || `Error ${r.status}`);
+}
+
+$('#loginForm').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const code = $('#code').value.trim().toUpperCase();
+  if (!/^[A-Z]{4}$/.test(code)) { $('#lerr').textContent = 'El código son 4 letras.'; return; }
+  $('#goBtn').disabled = true; $('#lerr').textContent = '';
+  try {
+    await login(code);
+    document.body.classList.remove('locked'); $('#code').value = '';
+    connect();
+  } catch (e) { $('#lerr').textContent = e.message; $('#code').select(); }
+  finally { $('#goBtn').disabled = false; }
+});
+
+async function start() {
+  const urlToken = new URLSearchParams(location.search).get('token');
+  if (urlToken) {   // compatibilidad con enlaces antiguos ?token=XXXX
+    history.replaceState(null, '', location.pathname);
+    try { await login(urlToken); } catch (e) { lock(e.message); return; }
+  }
+  const ok = await hasSession();
+  if (ok === false) { lock(); return; }
+  connect();
+}
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  setConn('Conectando…');
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => { retryMs = 1000; setConn('Conectado', true); sendInput(true); };
+  ws.onmessage = ev => { try { onMessage(JSON.parse(ev.data)); } catch (e) { console.error(e); } };
+  ws.onclose = ev => {
+    setConn(`Desconectado <small>código ${ev.code}</small>`);
+    resetTelemetry();
+    setTimeout(async () => {
+      if (await hasSession() === false) { lock('La sesión caducó. Escribe el código de nuevo.'); return; }
+      connect();
+    }, retryMs);
+    retryMs = Math.min(retryMs * 2, 8000);
+  };
+}
+
+function onMessage(m) {
+  switch (m.t) {
+    case 'hello': host = m.host; setConn(`${esc(m.host)} <small>v${esc(m.v)}</small>`, true); break;
+    case 'pong': onPong(m); break;
+    case 'tel': onTelemetry(m); break;
+    case 'game': onGameMeta(m); break;
+    case 'gv': onGameValues(m); break;
+    case 'err': console.warn('servidor:', m.msg); break;
+  }
+}
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------- entrada ---------- */
+let lastJson = '', lastSent = 0;
+function sendInput(force) {
+  if (!ws || ws.readyState !== 1) return;
+  const json = JSON.stringify(state), now = performance.now();
+  // enviar al cambiar; si no cambia, latido cada 100 ms (el servidor suelta todo a los 500 ms sin latido)
+  if (force || json !== lastJson || now - lastSent > 100) {
+    ws.send('{"t":"in","s":' + json + '}');
+    lastJson = json; lastSent = now;
+  }
+}
+function neutral() { for (const k of KEYS) state[k] = 0; sendInput(true); }
+
+const STD = {a:0,b:1,x:2,y:3,lb:4,rb:5,back:8,start:9,ls:10,rs:11,guide:16};
+const btn = (g, i) => g.buttons[i]?.value || 0;
+const axis = (g, i) => { const v = g.axes[i] || 0; return Math.abs(v) < 0.08 ? 0 : v; };
+const stickInt = v => Math.max(-32768, Math.min(32767, Math.round(v * 32767)));
+let padId = '';
+
+function pollGamepad() {
+  if (typeof navigator.getGamepads !== 'function') {
+    foot(window.isSecureContext ? 'Este navegador no ofrece la Gamepad API.' :
+      'El navegador bloquea el mando físico en http://. Ver README: flag de Chrome o APK.', true);
+    return;
+  }
+  let g;
+  try { g = Array.from(navigator.getGamepads()).find(Boolean); }
+  catch (e) { foot('Gamepad API bloqueada: ' + e.message, true); return; }
+  if (!g) { if (padId) { padId = ''; neutral(); } foot('Pulsa un botón del mando para detectarlo.'); return; }
+  if (g.id !== padId) {
+    padId = g.id;
+    foot(`Mando: ${g.id}` + (g.mapping === 'standard' ? '' : ' · mapeo no estándar, hay que calibrar'), g.mapping !== 'standard');
+  }
+  for (const [k, i] of Object.entries(STD)) state[k] = btn(g, i) > 0.5 ? 1 : 0;
+  state.lt = Math.round(btn(g, 6) * 255); state.rt = Math.round(btn(g, 7) * 255);
+  state.lx = stickInt(axis(g, 0)); state.ly = stickInt(axis(g, 1));
+  state.rx = stickInt(axis(g, 2)); state.ry = stickInt(axis(g, 3));
+  state.dx = (btn(g, 15) > .5) - (btn(g, 14) > .5);
+  state.dy = (btn(g, 13) > .5) - (btn(g, 12) > .5);
+}
+
+function frame() {
+  if (mode === 'physical') pollGamepad();
+  sendInput(false);
+  requestAnimationFrame(frame);   // se pausa con la pestaña oculta => el servidor suelta los controles
+}
+
+window.addEventListener('blur', neutral);
+document.addEventListener('visibilitychange', () => { if (document.hidden) neutral(); });
+
+/* ---------- mando táctil ---------- */
+function setMode(m) { mode = m; document.body.classList.toggle('touchmode', m === 'touch'); neutral(); }
+$('#touchBtn').onclick = () => setMode('touch');
+$('#closeTouch').onclick = () => setMode('physical');
+
+const DPAD = {up:['dy',-1], down:['dy',1], left:['dx',-1], right:['dx',1]};
+for (const el of document.querySelectorAll('[data-b]')) {
+  const name = el.dataset.b;
+  const set = on => {
+    if (mode !== 'touch') return;
+    if (DPAD[name]) { const [k, v] = DPAD[name]; state[k] = on ? v : (state[k] === v ? 0 : state[k]); }
+    else state[name] = on ? (name === 'lt' || name === 'rt' ? 255 : 1) : 0;
+    el.classList.toggle('on', on);
+  };
+  el.addEventListener('pointerdown', e => { e.preventDefault(); el.setPointerCapture(e.pointerId); set(true); });
+  for (const t of ['pointerup', 'pointercancel', 'lostpointercapture']) el.addEventListener(t, () => set(false));
+}
+for (const st of document.querySelectorAll('[data-stick]')) {
+  const p = st.dataset.stick, knob = st.querySelector('.knob');
+  const move = e => {
+    if (mode !== 'touch') return;
+    const r = st.getBoundingClientRect(), max = r.width * .3;
+    let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+    const k = Math.min(1, max / Math.max(1, Math.hypot(dx, dy))); dx *= k; dy *= k;
+    knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    state[p + 'x'] = stickInt(dx / max); state[p + 'y'] = stickInt(dy / max);
+  };
+  const reset = () => { knob.style.transform = 'translate(-50%,-50%)'; state[p + 'x'] = 0; state[p + 'y'] = 0; };
+  st.addEventListener('pointerdown', e => { e.preventDefault(); st.setPointerCapture(e.pointerId); move(e); });
+  st.addEventListener('pointermove', e => { if (st.hasPointerCapture(e.pointerId)) move(e); });
+  for (const t of ['pointerup', 'pointercancel', 'lostpointercapture']) st.addEventListener(t, reset);
+}
+
+/* ---------- latencia ---------- */
+let pingId = 0; const rtts = [];
+setInterval(() => { if (ws?.readyState === 1) ws.send(JSON.stringify({t: 'ping', id: ++pingId, ct: performance.now()})); }, 1000);
+function onPong(m) {
+  const rtt = performance.now() - m.ct;
+  rtts.push(rtt); if (rtts.length > 20) rtts.shift();
+  const sorted = [...rtts].sort((a, b) => a - b);
+  const med = sorted[sorted.length >> 1];
+  const jit = sorted[Math.floor(sorted.length * .9)] - sorted[0];
+  $('#rtt').textContent = `${med.toFixed(0)} ms`;
+  $('#jitter').textContent = rtts.length > 3 ? `${jit.toFixed(0)} ms` : '—';
+}
+
+/* ---------- telemetría ---------- */
+const ftHist = []; const FT_MAX = 240; let mhStatus = '';
+const fmt = (v, unit, d = 0) => v == null ? '—' : `${(+v).toFixed(d)}${unit}`;
+function onTelemetry(m) {
+  const fpsEl = $('#fps');
+  fpsEl.textContent = m.fps == null ? '--' : Math.round(m.fps);
+  fpsEl.classList.toggle('idle', m.fps == null);
+  $('#ft').textContent = fmt(m.ft, ' ms', 1);
+  $('#cpuLoad').textContent = fmt(m.cpu?.load, ' %');
+  setTemp('#cpuTemp', m.cpu?.temp, 85);
+  $('#gpuLoad').textContent = fmt(m.gpu?.load, ' %');
+  setTemp('#gpuTemp', m.gpu?.temp, 90);
+  $('#mem').textContent = m.mem?.used ? `${(m.mem.used / 2**30).toFixed(1)}/${(m.mem.total / 2**30).toFixed(0)} G` : '—';
+  if (m.ftNew?.length) { ftHist.push(...m.ftNew); ftHist.splice(0, Math.max(0, ftHist.length - FT_MAX)); }
+  if (m.fps == null) ftHist.length = 0;
+  mhStatus = m.mh || '';
+  $('#mh').textContent = `MangoHud: ${mhStatus}`;
+  $('#mh').hidden = m.fps != null || !mhStatus;
+  drawChart();
+}
+function setTemp(sel, v, hot) { const el = $(sel); el.textContent = fmt(v, ' °C'); el.classList.toggle('hot', v != null && v >= hot); }
+function resetTelemetry() { onTelemetry({}); $('#rtt').textContent = '— ms'; rtts.length = 0; }
+
+function drawChart() {
+  const c = $('#chart'), dpr = devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+  if (!w || !h) return;
+  if (c.width !== w * dpr || c.height !== h * dpr) { c.width = w * dpr; c.height = h * dpr; }
+  const ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  const top = Math.max(40, ...ftHist) * 1.1, y = v => h - (v / top) * h;
+  ctx.font = '11px system-ui'; ctx.lineWidth = 1;
+  for (const [ms, label] of [[16.7, '60 fps'], [33.3, '30 fps']]) {
+    if (ms > top) continue;
+    ctx.strokeStyle = '#2b2f39'; ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.moveTo(0, y(ms)); ctx.lineTo(w, y(ms)); ctx.stroke();
+    ctx.setLineDash([]); ctx.fillStyle = '#8c919c'; ctx.fillText(label, 4, y(ms) - 4);
+  }
+  if (ftHist.length < 2) return;
+  const step = w / (FT_MAX - 1), x0 = w - (ftHist.length - 1) * step;
+  ctx.strokeStyle = '#ffb547'; ctx.lineWidth = 1.6; ctx.beginPath();
+  ftHist.forEach((v, i) => i ? ctx.lineTo(x0 + i * step, y(v)) : ctx.moveTo(x0, y(v)));
+  ctx.stroke();
+}
+addEventListener('resize', drawChart);
+
+/* ---------- juego ---------- */
+let gFields = [];
+function barHTML(f) {
+  return `<div class="lab"><span>${esc(f.label)}</span><b>—</b></div><div class="track"><div class="fill"></div></div>`;
+}
+function onGameMeta(m) {
+  for (const id of ['#gparty', '#gbars', '#gnums', '#ginfo']) $(id).innerHTML = '';
+  $('#gerr').textContent = '';
+  gFields = [];
+  const attached = m.state === 'attached';
+  document.body.classList.toggle('nogame', !attached);
+  if (!attached) return;
+  $('#gname').textContent = m.name; $('#gsub').textContent = `PID ${m.pid}`; $('#gempty').hidden = true;
+  const members = {};
+  for (const f of m.fields) {
+    let el;
+    if (f.section === 'header') {
+      el = document.createElement('span');
+      $('#gsub').append(' · ', el);
+    } else if (f.section === 'party') {
+      let card = members[f.slot];
+      if (!card) {
+        card = members[f.slot] = document.createElement('div');
+        card.className = 'member';
+        $('#gparty').append(card);
+      }
+      if (f.kind === 'text') {
+        el = document.createElement('div');
+        el.className = card.querySelector('.who') ? 'note' : 'who';
+        el.textContent = el.className === 'who' ? f.label : '';
+      }
+      else { el = document.createElement('div'); el.className = 'gf'; el.innerHTML = barHTML(f); }
+      card.append(el);
+    } else if (f.section === 'info' || f.kind === 'text') {
+      $('#ginfo').insertAdjacentHTML('beforeend', `<dt>${esc(f.label)}</dt><dd>—</dd>`);
+      el = $('#ginfo').lastElementChild;
+    } else if (f.kind === 'bar') {
+      el = document.createElement('div'); el.className = 'gf'; el.innerHTML = barHTML(f); $('#gbars').append(el);
+    } else {
+      el = document.createElement('div'); el.className = 'gnum';
+      el.innerHTML = `<span>${esc(f.label)}</span><b>—</b>`; $('#gnums').append(el);
+    }
+    el.style.setProperty('--tone', `var(--${f.tone || 'neutral'})`);
+    const val = f.kind === 'text' ? el : (el.querySelector('b') || el);
+    gFields.push({f, el, val, fill: el.querySelector('.fill')});
+  }
+}
+const nf = new Intl.NumberFormat('es', {maximumFractionDigits: 1});
+function onGameValues(m) {
+  $('#gerr').textContent = m.err ? `Error de lectura: ${m.err}` : '';
+  if (!m.v) return;
+  for (const {f, val, fill} of gFields) {
+    const v = m.v[f.key];
+    if (f.section === 'party') {
+      // tarjeta sin personaje: oculta; barra sin dato (fuera de batalla): oculta
+      if (val.classList.contains('who')) val.parentElement.hidden = v == null;
+      else if (f.kind === 'bar') { val.closest('.gf').hidden = v == null; }
+    }
+    if (f.kind === 'text') {
+      const isName = val.classList.contains('who');
+      val.textContent = v == null ? (isName ? f.label : (f.section === 'party' ? '' : '—')) : String(v);
+      continue;
+    }
+    if (v == null) continue;
+    if (f.kind === 'bar') {
+      const max = m.v[f.max_key];
+      val.innerHTML = max != null ? `${nf.format(v)} <small>/ ${nf.format(max)}</small>` : nf.format(v);
+      fill.style.width = max > 0 ? `${Math.max(0, Math.min(100, v / max * 100))}%` : '0';
+    } else {
+      val.textContent = typeof v === 'number' ? nf.format(v) : String(v);
+    }
+  }
+}
+
+document.body.classList.add('nogame');
+resetTelemetry();
+setMode('physical');
+requestAnimationFrame(frame);
+start();
+</script>
+</body>
+</html>

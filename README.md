@@ -1,0 +1,122 @@
+# PS5 GamePad Hub v0.4.2
+
+Android (navegador hoy, APK después) → Wi-Fi local → PC Linux: mando virtual, telemetría (FPS, frametimes, CPU/GPU, RAM, latencia) y datos del juego leídos de memoria. **Nada se ejecuta como root.**
+
+## Cómo está dividido
+
+| Proceso | Qué hace | Qué no puede hacer |
+|---|---|---|
+| `ps5gamepad serve` (servicio permanente) | mando virtual, telemetría, web y WebSocket en el puerto 8080 | leer la memoria de ningún juego |
+| `ps5gamepad run %command%` (lo lanza Steam) | lanza el juego como hijo, activa los logs de MangoHud y ejecuta el plugin | abrir puertos de red |
+
+Linux (con `kernel.yama.ptrace_scope=1`, el valor de Ubuntu) solo deja leer la memoria de un proceso a su ancestro. Como el lanzador es el padre del juego, puede leerlo sin root. El servicio que da la cara a la red no tiene ese poder. Los dos se comunican por un socket Unix privado (`$XDG_RUNTIME_DIR/ps5gamepad/hub.sock`, permisos 0600).
+
+## Instalación (con tu usuario, sin sudo)
+
+```
+cd ps5-gamepad-v0.4.2
+sh tools/install.sh
+```
+
+Crea `~/.local/bin/ps5gamepad` y el servicio de usuario `ps5gamepad`, y te dice si tu usuario ya puede crear el mando virtual.
+
+Si vienes de la v0.3 (que corría con sudo), detén ese servidor y quita de `~/.config/MangoHud/MangoHud.conf` las líneas `output_folder`, `autostart_log`, `log_interval` y `log_duration`: el lanzador ahora las pone por ti.
+
+### Permisos del mando (`/dev/uinput`)
+
+El paquete de Steam suele instalar reglas udev que dan acceso a `/dev/uinput` al usuario con sesión iniciada. Compruébalo con `ls -l /dev/uinput` y `getfacl /dev/uinput`, o mira lo que dice `install.sh`. Si falta, una sola vez:
+
+```
+sudo groupadd -f uinput
+sudo usermod -aG uinput $USER
+echo 'KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="uinput", MODE="0660", OPTIONS+="static_node=uinput"' | sudo tee /etc/udev/rules.d/60-ps5-gamepad-uinput.rules
+echo uinput | sudo tee /etc/modules-load.d/uinput.conf
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+Cierra sesión y vuelve a entrar. Se usa un grupo propio porque el grupo `input` también permite leer teclado y ratón.
+
+## Uso
+
+1. Servicio: `systemctl --user start ps5gamepad` (y `enable` para que arranque al iniciar sesión).
+2. Código de acceso: `journalctl --user -u ps5gamepad -n 20`.
+3. Android: abre `http://IP-DEL-PC:8080` y escribe el código. La sesión dura 24 h.
+4. Steam, propiedades del juego, opciones de lanzamiento (ruta absoluta, cambia TU_USUARIO):
+   ```
+   /home/TU_USUARIO/.local/bin/ps5gamepad run mangohud %command%
+   ```
+
+Si el juego no muestra datos, el registro del lanzador está en `$XDG_RUNTIME_DIR/ps5gamepad/launcher.log` (normalmente `/run/user/1000/ps5gamepad/launcher.log`).
+
+Para probar sin juego real: `ps5gamepad run python3 tools/demo_game.py`.
+
+## FPS, frametimes y tamaño del log
+
+El lanzador añade a tu configuración de MangoHud (sin tocar tu archivo) las opciones de log, con una fila por frame. El log y la configuración generada van a `~/.cache/ps5gamepad/` (privado, 0700). Tiene que estar dentro de tu carpeta personal: los juegos de Proton corren en el contenedor de Steam, que comparte tu carpeta personal pero no `/run/user/...`. Para que no crezca:
+
+- el servicio libera cada 4 MB la parte del archivo ya leída (el archivo conserva su tamaño aparente, pero deja de ocupar memoria);
+- el lanzador borra el log al cerrar el juego, y también los de más de un día.
+
+Si tu configuración de MangoHud es un archivo por juego (`wine-*.conf`), el lanzador usa el general (`MangoHud.conf`) como base. En ese caso, copia tus opciones al general.
+
+## Plugins
+
+Viven en `plugins/` y los ejecuta solo el lanzador, sobre los descendientes del juego que lanzó. Son código Python con acceso de lectura a la memoria del juego: instala solo los que hayas revisado.
+
+Cada campo declara dónde se muestra en Android con `section`:
+
+- `party`: tarjetas por miembro (`slot` 1-4) con nombre, HP y MP;
+- `stats`: números grandes (Gil, EXP);
+- `info`: texto pequeño de diagnóstico.
+
+Si no hay juego con plugin, el panel derecho desaparece y la telemetría ocupa toda la pantalla.
+
+### Final Fantasy Resonance (`plugins/ffrs.py`)
+
+Solo para la build 24250053 de Steam: comprueba la cabecera PE del ejecutable (timestamp `0x6A586B2F`, tamaño `503013376`) y, si no coincide, no lee nada. Las rutas de memoria vienen de la tabla `FFRS_Steam_24250053_Starter.CT` (repositorio `shawnjohnjr/ff-RESONANCE-ct`); cada una está documentada al principio del plugin.
+
+| Dato | Dónde se muestra | Origen |
+|---|---|---|
+| Gil | estadísticas | partida activa, ruta de la tabla |
+| Nombre de los 4 miembros | tarjetas | equipo de la partida; en batalla, orden de la batalla |
+| Nivel y EXP para el siguiente | línea bajo el nombre | EXP de la partida + curvas de nivel del juego (cálculo propio: compáralo con el menú) |
+| HP y MP | barras de cada tarjeta, solo en batalla | reflexión de Unreal por nombre de propiedad (ver abajo) |
+
+**HP y MP.** La tabla no los lee, así que el plugin los busca por nombre en la descripción interna de la clase `CPP_BtlUnitParameter` (por ejemplo `HitPoint` y `MaxHitPoint`, el estilo de nombres que usa el juego). Antes de fiarse, comprueba que la reflexión encuentre dos offsets ya confirmados por la tabla (`0xD0`, ID del personaje, y `0x118`, Limit). Si la comprobación falla o un nombre es ambiguo, no muestra ese valor y lo indica en "Origen HP/MP". En la primera batalla escribe la lista completa de propiedades en `launcher.log`.
+
+El escaneo de objetos para encontrar la partida tarda unos segundos; se hace una vez al cargar y, mientras estés en el título, se reintenta cada 10 s.
+
+No uses plugins en juegos online con anti-cheat.
+
+## Seguridad
+
+- Ningún componente necesita root; el servicio corre con `NoNewPrivileges`.
+- El servicio web no puede leer memoria de juegos; el lector no abre puertos.
+- Solo red local de confianza, sin cifrado. No abras el puerto en el router ni en túneles.
+- Código de 4 letras con bloqueo de 60 s tras 5 fallos; cookie de 24 h `HttpOnly` y `SameSite=Strict`; el WebSocket rechaza otros orígenes; un solo cliente a la vez.
+- Para cerrar todas las sesiones: borra `~/.local/state/ps5gamepad/sessions.json` y reinicia el servicio.
+
+## Protocolo
+
+WebSocket `/ws` (JSON). Cliente → servidor: `in` (estado del mando, al cambiar y cada 100 ms) y `ping`. Servidor → cliente: `hello`, `tel` (`cpu`, `gpu`, `mem`, `fps`, `ft`, `ftNew[]`, `mh`), `game` (metadatos y campos del plugin), `gv` (valores o `err`), `pong`, `err`. Si no llega `in` en 500 ms, se sueltan todos los controles.
+
+Lanzador → servicio: líneas JSON por el socket Unix, solo de tipo `game` y `gv`.
+
+## Estructura
+
+```
+server/
+  cli.py        ps5gamepad serve | run
+  main.py       servicio: HTTP, WebSocket, watchdog, telemetría, socket puente
+  launcher.py   lanzador: juego hijo, MangoHud, plugins, puente
+  auth.py       código de acceso y sesiones
+  pad.py        mando uinput
+  telemetry.py  /proc, /sys y log de MangoHud
+  memory.py     lectura de memoria y descendientes
+  ue.py         lector de Unreal Engine 5 (nombres, objetos, GWorld)
+  plugins.py    carga y ciclo de vida de plugins
+  paths.py      rutas por usuario
+plugins/        ffrs.py, demo_game.py, _template.py
+tools/          install.sh, ps5gamepad.service, demo_game.py
+web/index.html  cliente Android
+```
