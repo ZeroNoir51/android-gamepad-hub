@@ -222,6 +222,8 @@ mi_juego/
 - Al instalar se valida el zip: una sola carpeta `<id>/`, sin rutas `..` ni enlaces simbólicos, tamaño acotado y API compatible.
 - Si `read()` tarda más de 5 s, se avisa en Android y no se lanza otra lectura hasta que termine.
 
+`party_style` (opcional) elige cómo se dibujan las tarjetas del grupo: `bars` (por defecto: barras con valor / máximo) o `ring` (barras inclinadas y el primer campo de tono `limit` como anillo alrededor del retrato). Solo afecta al plugin que lo declara.
+
 Cada campo declara dónde se muestra con `section`: `party` (tarjetas por miembro, `slot` 1-4), `stats` (números grandes), `header` (junto al nombre del juego) o `info` (diagnóstico, solo con *Debug*). `kind`: `number`, `bar` (con `max_key`), `text` o `image`. `tone` (color): `hp`, `mp`, `limit`, `gold`, `xp` o `neutral`.
 
 Las imágenes las pone el usuario; el proyecto no incluye arte de ningún juego:

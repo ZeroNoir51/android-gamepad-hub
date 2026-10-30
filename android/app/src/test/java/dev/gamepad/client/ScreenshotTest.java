@@ -61,6 +61,32 @@ public class ScreenshotTest {
         a.getSharedPreferences("gamepad", 0).edit().putInt("touchMode", 0).commit();
         call(a, "updateTouchPad");
         shot(a, new File(out, "apk-3-fondo-sin-tactil.png"));
+        // Estilo "anillo" (party_style ring): Trails in the Sky 2nd Chapter
+        set(a, "bgList", new java.util.ArrayList<>());
+        set(a, "bgBitmap", null);
+        msg(a, "{\"t\":\"game\",\"state\":\"attached\",\"id\":\"trails2\",\"name\":\"Trails in the Sky 2nd Chapter\",\"pid\":7,\"style\":\"ring\",\"fields\":["
+                + ring(1) + "," + ring(2) + "," + ring(3) + "," + ring(4)
+                + ",{\"key\":\"mira\",\"label\":\"Mira\",\"tone\":\"gold\",\"section\":\"stats\"}]}");
+        msg(a, "{\"t\":\"gv\",\"v\":{" + member(1, "Estelle", 46, 3096, 3400, 757, 900, 187)
+                + "," + member(2, "Scherazard", 46, 2800, 2950, 640, 1100, 200)
+                + "," + member(3, "Kloe", 45, 1500, 2600, 1200, 1300, 35)
+                + "," + member(4, "Olivier", 46, 2500, 2700, 900, 1000, 120) + ",\"mira\":123456}}");
+        shot(a, new File(out, "apk-4-anillo.png"));
+    }
+
+    private static String ring(int n) {
+        return "{\"key\":\"p" + n + "_name\",\"label\":\"Miembro\",\"kind\":\"text\",\"section\":\"party\",\"slot\":" + n + "},"
+                + "{\"key\":\"p" + n + "_img\",\"label\":\"Retrato\",\"kind\":\"image\",\"section\":\"party\",\"slot\":" + n + "},"
+                + "{\"key\":\"p" + n + "_lv\",\"label\":\"Nivel\",\"kind\":\"text\",\"section\":\"party\",\"slot\":" + n + "},"
+                + "{\"key\":\"p" + n + "_hp\",\"label\":\"HP\",\"kind\":\"bar\",\"max_key\":\"p" + n + "_hp_max\",\"tone\":\"hp\",\"section\":\"party\",\"slot\":" + n + "},"
+                + "{\"key\":\"p" + n + "_ep\",\"label\":\"EP\",\"kind\":\"bar\",\"max_key\":\"p" + n + "_ep_max\",\"tone\":\"mp\",\"section\":\"party\",\"slot\":" + n + "},"
+                + "{\"key\":\"p" + n + "_cp\",\"label\":\"CP\",\"kind\":\"bar\",\"max_key\":\"p" + n + "_cp_max\",\"tone\":\"limit\",\"section\":\"party\",\"slot\":" + n + "}";
+    }
+
+    private static String member(int n, String name, int lv, int hp, int hpMax, int ep, int epMax, int cp) {
+        String p = "\"p" + n + "_";
+        return p + "name\":\"" + name + "\"," + p + "lv\":\"Nv " + lv + "\"," + p + "hp\":" + hp + "," + p + "hp_max\":" + hpMax
+                + "," + p + "ep\":" + ep + "," + p + "ep_max\":" + epMax + "," + p + "cp\":" + cp + "," + p + "cp_max\":200";
     }
 
     private static String party(int n) {

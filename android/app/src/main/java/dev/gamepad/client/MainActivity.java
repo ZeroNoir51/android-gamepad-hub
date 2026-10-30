@@ -80,7 +80,9 @@ public final class MainActivity extends Activity {
     private TextView loginError, conn, rtt, fps, ft, mh, foot, padWarn;
     private TextView cpuLoad, cpuTemp, mem, gpuLoad, gpuTemp, jitter;
     private View dot;
-    private Button debugBtn, guideBtn;
+    private Button debugBtn, guideBtn, linkBtn;
+    /** Desconectado a mano: no reintentar hasta pulsar Conectar (deja sitio a otro dispositivo). */
+    private boolean manualOff;
     private ChartView chart;
     private GamePanel game;
     private LinearLayout body, left, telBox;
@@ -168,19 +170,48 @@ public final class MainActivity extends Activity {
     // ---------------------------------------------------------------- conexión
 
     private void connect() {
-        if (ws != null || !started || cookie == null) return;
+        if (ws != null || !started || cookie == null || manualOff) return;
         Ui.set(conn, "Conectando…");
+        WsClient[] self = new WsClient[1];
+        // Los avisos de una conexión que ya no es la actual (cerrada a mano, sustituida) se ignoran
         WsClient client = new WsClient(host, port, cookie, new WsClient.Listener() {
-            @Override public void onOpen() { ui.post(() -> onOpened()); }
+            @Override public void onOpen() { ui.post(() -> { if (ws == self[0]) onOpened(); }); }
             @Override public void onText(String text) {
                 JSONObject m;
                 try { m = new JSONObject(text); } catch (Exception e) { return; }
-                ui.post(() -> onMessage(m));
+                ui.post(() -> { if (ws == self[0]) onMessage(m); });
             }
-            @Override public void onClose(String reason, int status) { ui.post(() -> onClosed(reason, status)); }
+            @Override public void onClose(String reason, int status) {
+                ui.post(() -> { if (ws == self[0]) onClosed(reason, status); });
+            }
         });
+        self[0] = client;
         ws = client;
+        updateLink();
         client.start();
+    }
+
+    /** Botón de la barra: suelta el mando del PC o lo recupera al instante. */
+    private void toggleLink() {
+        if (ws != null && !manualOff) {
+            manualOff = true;
+            disconnect();
+            resetTelemetry();
+            game.clear();
+            gameAttached = false;
+            layoutBody();
+            Ui.set(conn, "Desconectado · pulsa Conectar");
+        } else {
+            manualOff = false;
+            ui.removeCallbacks(reconnect);
+            retryMs = 1000;
+            connect();
+        }
+        updateLink();
+    }
+
+    private void updateLink() {
+        if (linkBtn != null) linkBtn.setText(ws != null && !manualOff ? "Desconectar" : "Conectar");
     }
 
     private void disconnect() {
@@ -196,6 +227,7 @@ public final class MainActivity extends Activity {
             ws = null;
         }
         setConnected(false, null);
+        updateLink();
     }
 
     private void onOpened() {
@@ -208,6 +240,7 @@ public final class MainActivity extends Activity {
 
     private void onClosed(String reason, int status) {
         ws = null;
+        updateLink();
         ui.removeCallbacks(heartbeat);
         ui.removeCallbacks(ping);
         setConnected(false, reason);
@@ -491,6 +524,7 @@ public final class MainActivity extends Activity {
 
     private void showLogin(String msg) {
         disconnect();
+        manualOff = false;   // tras entrar de nuevo, se conecta normal
         setContentView(loginView);
         hostEdit.setText(host.isEmpty() ? "" : host + ":" + port);
         hostEdit.setHint("192.168.1.50:8888");
@@ -608,6 +642,11 @@ public final class MainActivity extends Activity {
         rtt = Ui.number(this, 15, Ui.CYAN);
         rtt.setPadding(0, 0, Ui.dp(this, 12), 0);
         top.addView(rtt);
+        linkBtn = smallButton("Desconectar");
+        linkBtn.setOnClickListener(v -> toggleLink());
+        LinearLayout.LayoutParams klp = new LinearLayout.LayoutParams(-2, -2);
+        klp.rightMargin = Ui.dp(this, 8);
+        top.addView(linkBtn, klp);
         Button settings = smallButton("Ajustes");
         settings.setOnClickListener(v -> showSettings());
         top.addView(settings);

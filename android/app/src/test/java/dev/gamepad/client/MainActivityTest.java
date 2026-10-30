@@ -110,6 +110,45 @@ public class MainActivityTest {
         assertTrue(a.getSharedPreferences("gamepad", 0).getString("layout:ffrs", "").contains("\"cols\":1"));
     }
 
+    @Test public void tarjetasAnilloSinMaximo() throws Exception {
+        call("showHud", new Class<?>[0]);
+        call("onMessage", new Class<?>[] {JSONObject.class}, new JSONObject(
+                "{\"t\":\"game\",\"state\":\"attached\",\"id\":\"trails2\",\"name\":\"Trails\",\"pid\":7,\"style\":\"ring\",\"fields\":["
+                + "{\"key\":\"p1_name\",\"label\":\"Miembro 1\",\"kind\":\"text\",\"section\":\"party\",\"slot\":1},"
+                + "{\"key\":\"p1_hp\",\"label\":\"HP\",\"kind\":\"bar\",\"max_key\":\"p1_hp_max\",\"tone\":\"hp\",\"section\":\"party\",\"slot\":1},"
+                + "{\"key\":\"p1_cp\",\"label\":\"CP\",\"kind\":\"bar\",\"max_key\":\"p1_cp_max\",\"tone\":\"limit\",\"section\":\"party\",\"slot\":1}]}"));
+        call("onMessage", new Class<?>[] {JSONObject.class}, new JSONObject(
+                "{\"t\":\"gv\",\"v\":{\"p1_name\":\"Estelle\",\"p1_hp\":3096,\"p1_hp_max\":3400,\"p1_cp\":187,\"p1_cp_max\":200}}"));
+        shadowOf(Looper.getMainLooper()).idle();
+        View content = a.findViewById(android.R.id.content);
+        assertNotNull(findText(content, "3.096"));   // solo el número, sin "/ 3.400"
+        assertNotNull(findText(content, "187"));
+        assertNotNull(findText(content, "CP"));
+    }
+
+    @Test public void desconectarYConectarAMano() throws Exception {
+        call("showHud", new Class<?>[0]);
+        for (String[] kv : new String[][] {{"cookie", "x"}, {"host", "127.0.0.1"}}) {
+            Field f = MainActivity.class.getDeclaredField(kv[0]);
+            f.setAccessible(true);
+            f.set(a, kv[1]);
+        }
+        Field port = MainActivity.class.getDeclaredField("port");
+        port.setAccessible(true);
+        port.setInt(a, 9);
+        call("toggleLink", new Class<?>[0]);              // sin conexión: Conectar conecta ya
+        Button link = (Button) field("linkBtn");
+        assertNotNull(field("ws"));
+        assertEquals("Desconectar", link.getText().toString());
+        call("toggleLink", new Class<?>[0]);              // Desconectar: suelta y no reintenta
+        shadowOf(Looper.getMainLooper()).idle();
+        assertNull(field("ws"));
+        assertEquals("Conectar", link.getText().toString());
+        assertEquals("Desconectado · pulsa Conectar", ((TextView) field("conn")).getText().toString());
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(20));
+        assertNull(field("ws"));                          // sin reconexión automática
+    }
+
     @Test public void ajustesSeAbren() throws Exception {
         showHudWithGame();
         call("showSettings", new Class<?>[0]);

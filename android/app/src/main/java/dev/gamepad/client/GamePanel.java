@@ -49,6 +49,7 @@ final class GamePanel {
     String pluginId, pluginName;
     private final NumberFormat nf = NumberFormat.getIntegerInstance(new Locale("es"));
     private boolean debug;
+    private boolean ring;     // party_style "ring": barras inclinadas y retrato con arco
 
     private static final class Binding {
         String key, kind, section, maxKey, label;
@@ -56,6 +57,8 @@ final class GamePanel {
         View row;             // fila que se oculta si no hay dato
         TextView text, initial;
         BarView bar;
+        SlantBarView slant;
+        RingView ringArc;
         ImageView image;
         String imageUrl;
         boolean isName;
@@ -113,6 +116,7 @@ final class GamePanel {
         pluginId = id.matches("[a-z0-9_]+") ? id : null;
         pluginName = m.optString("name");
         pidText = "PID " + m.optInt("pid");
+        ring = "ring".equals(m.optString("style"));
         JSONArray fields = m.optJSONArray("fields");
         Map<Integer, LinearLayout> bySlot = new LinkedHashMap<>();
         for (int i = 0; fields != null && i < fields.length(); i++) {
@@ -133,12 +137,13 @@ final class GamePanel {
                     int slot = f.optInt("slot");
                     LinearLayout card = bySlot.get(slot);
                     if (card == null) {
-                        card = newCard();
+                        card = ring ? newRingCard() : newCard();
                         bySlot.put(slot, card);
                         cards.add(card);
                     }
                     b.card = card;
-                    bindParty(b, card, color);
+                    if (ring) bindRing(b, card, f.optString("tone"));
+                    else bindParty(b, card, color);
                     break;
                 }
                 case "info": {
@@ -238,6 +243,116 @@ final class GamePanel {
         return card;
     }
 
+    /** Tarjeta "anillo": nombre arriba; barras inclinadas a la izquierda y retrato con arco a la derecha. */
+    private LinearLayout newRingCard() {
+        LinearLayout card = Ui.column(c);
+        LinearLayout names = Ui.row(c);
+        names.setGravity(Gravity.BOTTOM);
+        card.addView(names);
+        LinearLayout body = Ui.row(c);
+        body.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout bars = Ui.column(c);
+        body.addView(bars, new LinearLayout.LayoutParams(0, -2, 1f));
+        FrameLayout frame = new FrameLayout(c);
+        RingView arc = new RingView(c);
+        frame.addView(arc, new FrameLayout.LayoutParams(-1, -1));
+        FrameLayout ava = new FrameLayout(c);
+        ava.setBackground(Ui.rounded(Ui.PANEL, 0xBFFFFFFF, 40, c));
+        ava.setOutlineProvider(new ViewOutlineProvider() {
+            @Override public void getOutline(View v, Outline o) { o.setOval(0, 0, v.getWidth(), v.getHeight()); }
+        });
+        ava.setClipToOutline(true);
+        TextView ini = Ui.text(c, 22, Ui.MUTED);
+        ini.setGravity(Gravity.CENTER);
+        ava.addView(ini, new FrameLayout.LayoutParams(-1, -1));
+        ImageView img = new ImageView(c);
+        img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        img.setVisibility(View.GONE);
+        ava.addView(img, new FrameLayout.LayoutParams(-1, -1));
+        FrameLayout.LayoutParams alp = new FrameLayout.LayoutParams(-1, -1);
+        int m = Ui.dp(c, 10);
+        alp.setMargins(m, m, m, m);
+        frame.addView(ava, alp);
+        LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(Ui.dp(c, 84), Ui.dp(c, 84));
+        flp.leftMargin = Ui.dp(c, 6);
+        body.addView(frame, flp);
+        card.addView(body);
+        card.setTag(new Object[] {ini, img, names, bars, frame, arc});
+        return card;
+    }
+
+    private void bindRing(Binding b, LinearLayout card, String tone) {
+        Object[] parts = (Object[]) card.getTag();
+        LinearLayout names = (LinearLayout) parts[2], bars = (LinearLayout) parts[3];
+        FrameLayout frame = (FrameLayout) parts[4];
+        RingView arc = (RingView) parts[5];
+        if ("image".equals(b.kind)) {
+            b.image = (ImageView) parts[1];
+        } else if ("text".equals(b.kind)) {
+            boolean first = names.getChildCount() == 0;
+            b.text = Ui.text(c, first ? 15 : 13, first ? Ui.TEXT : Ui.MUTED);
+            b.text.setSingleLine(true);
+            if (first) {
+                b.text.setTypeface(null, android.graphics.Typeface.BOLD);
+                b.text.setText(b.label);
+                b.isName = true;
+                b.initial = (TextView) parts[0];
+            } else {
+                b.text.setPadding(Ui.dp(c, 8), 0, 0, 0);
+            }
+            names.addView(b.text);
+        } else if ("limit".equals(tone) && arc.getTag() == null) {
+            // el primer "limit" (CP, Limit...) es el arco del retrato, con su número en una insignia
+            arc.setTag(b.key);
+            b.ringArc = arc;
+            LinearLayout badge = Ui.column(c);
+            badge.setGravity(Gravity.CENTER_HORIZONTAL);
+            badge.setBackground(Ui.rounded(0xFF14171C, RingView.GREEN, 12, c));
+            badge.setPadding(Ui.dp(c, 6), Ui.dp(c, 1), Ui.dp(c, 6), Ui.dp(c, 1));
+            b.text = bigNumber(17);
+            TextView lab = Ui.text(c, 8.5f, RingView.GREEN);
+            lab.setTypeface(null, android.graphics.Typeface.BOLD);
+            lab.setText(b.label);
+            lab.setIncludeFontPadding(false);
+            badge.addView(b.text);
+            badge.addView(lab);
+            frame.addView(badge, new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.END));
+            b.row = badge;
+        } else {
+            LinearLayout r = Ui.column(c);
+            LinearLayout top = Ui.row(c);
+            top.setGravity(Gravity.BOTTOM);
+            TextView tag = Ui.text(c, 11, Ui.TEXT);
+            tag.setTypeface(null, android.graphics.Typeface.BOLD_ITALIC);
+            tag.setText(b.label);
+            tag.setBackground(Ui.rounded(0xFF1A1D24, 0x40FFFFFF, 3, c));
+            tag.setPadding(Ui.dp(c, 6), Ui.dp(c, 1), Ui.dp(c, 6), Ui.dp(c, 1));
+            b.text = bigNumber(26);
+            top.addView(tag);
+            top.addView(Ui.spacer(c));
+            top.addView(b.text);
+            r.addView(top);
+            boolean hp = "hp".equals(tone);
+            b.slant = new SlantBarView(c);
+            b.slant.setColors(hp ? 0xFFE0782A : 0xFF2F6FD6, hp ? 0xFFFFD35E : 0xFF7FD2FF);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, Ui.dp(c, 8));
+            lp.topMargin = Ui.dp(c, 2);
+            r.addView(b.slant, lp);
+            r.setPadding(0, Ui.dp(c, 4), 0, 0);
+            b.row = r;
+            bars.addView(r);
+        }
+    }
+
+    private TextView bigNumber(float sp) {
+        TextView t = Ui.number(c, sp, 0xFFFFFFFF);
+        t.setTypeface(t.getTypeface(), android.graphics.Typeface.BOLD_ITALIC);
+        t.setShadowLayer(Ui.dp(c, 2), 0, Ui.dp(c, 1), 0xCC000000);
+        t.setIncludeFontPadding(false);
+        t.setText("—");
+        return t;
+    }
+
     private void bindParty(Binding b, LinearLayout card, int color) {
         Object[] parts = (Object[]) card.getTag();
         TextView ini = (TextView) parts[0];
@@ -314,6 +429,15 @@ final class GamePanel {
             }
             if (b.row != null) b.row.setVisibility(raw == null ? View.GONE : View.VISIBLE);
             if (raw == null) continue;
+            if (b.ringArc != null || b.slant != null) {   // estilo anillo: solo el número, sin "/ máx"
+                Object maxRaw = b.maxKey == null || v.isNull(b.maxKey) ? null : v.opt(b.maxKey);
+                double max = maxRaw == null ? 0 : toDouble(maxRaw);
+                float frac = max > 0 ? (float) (toDouble(raw) / max) : 0f;
+                Ui.set(b.text, fmt(raw));
+                if (b.ringArc != null) b.ringArc.setFraction(frac);
+                else b.slant.setFraction(frac);
+                continue;
+            }
             if (b.bar != null) {
                 double val = toDouble(raw);
                 Object maxRaw = b.maxKey == null || v.isNull(b.maxKey) ? null : v.opt(b.maxKey);
