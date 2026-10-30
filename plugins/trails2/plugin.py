@@ -292,9 +292,10 @@ class Plugin(GamePlugin):
         return ids
 
     def _diff_party(self, mem, ids):
-        """Compara el bloque con el de hace DIFF_EVERY s: si un u16 que valía el ID de un
-        miembro pasa a ser el de otro personaje y forma una lista válida, esa es la lista
-        viva del grupo (la de +0x5145C solo cambia al cargar). Devuelve el grupo nuevo o None."""
+        """Compara el bloque con el de hace DIFF_EVERY s: si un u16 con el ID de un personaje
+        pasa a ser el de otro y forma una lista válida (3+ miembros, 2+ del grupo actual), esa
+        es la lista viva del grupo (la de +0x5145C solo cambia al cargar). Devuelve el grupo
+        nuevo o None."""
         now = time.monotonic()
         if now < self._next_diff:
             return None
@@ -315,21 +316,30 @@ class Plugin(GamePlugin):
                 if i % 2 or i + 2 > len(old):
                     continue
                 was, now_id = struct.unpack_from('<H', old, i)[0], struct.unpack_from('<H', new, i)[0]
-                if was == now_id or was not in ids:
+                # cualquier personaje por otro: el grupo que se cree tener puede estar desfasado
+                # (p. ej. Zin entró después del último guardado y +0x5145C aún no lo tiene)
+                if was == now_id or was not in NAMES:
                     continue
-                for back in range(0, 8, 2):            # la lista puede empezar hasta 3 huecos antes
+                # La lista puede empezar hasta 3 huecos antes. Ojo: Estelle es el ID 0, igual que el
+                # relleno; gana la ventana que más comparte con el grupo y, a igualdad, la primera.
+                best = None
+                for back in range(0, 8, 2):
                     s = i - back
                     if s < 0 or s + 8 > len(new):
                         continue
                     cand = self._parse_party(new[s:s + 8])
-                    if cand and now_id in cand and len(cand) >= len(ids):
-                        off = pos + s
-                        self._party_off = off
-                        self._watch[off] = new[s:s + 8]
-                        adopted = cand
-                        print(f'[trails2] grupo cambiado ({NAMES.get(was, was)} -> {NAMES.get(now_id, now_id)}) '
-                              f'en bloque+0x{off:X}: ' + ', '.join(NAMES.get(c, str(c)) for c in cand), flush=True)
-                        break
+                    if cand and now_id in cand and len(cand) >= 3:
+                        score = (len(set(cand) & set(ids)), len(cand), back)
+                        if score[0] >= 2 and (best is None or score > best[0]):
+                            best = (score, s, cand)
+                if best:
+                    _, s, cand = best
+                    off = pos + s
+                    self._party_off = off
+                    self._watch[off] = new[s:s + 8]
+                    adopted = cand
+                    print(f'[trails2] grupo cambiado ({NAMES.get(was, was)} -> {NAMES.get(now_id, now_id)}) '
+                          f'en bloque+0x{off:X}: ' + ', '.join(NAMES.get(c, str(c)) for c in cand), flush=True)
                 if adopted:
                     break
         return adopted
