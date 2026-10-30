@@ -107,7 +107,7 @@ Sin esto, el mando y la telemetría del sistema funcionan igual; solo faltan FPS
 
 ### Heroic (también Flatpak)
 
-Heroic no tiene `%command%`: usa un *wrapper*. En la configuración del juego → **Otros** → **Usar wrapper**, añade uno con comando `/home/TU_USUARIO/.local/bin/gamepad` y argumentos `run`. Para los FPS, activa también MangoHud en Heroic (en Flatpak necesita la extensión `org.freedesktop.Platform.VulkanLayer.MangoHud`).
+Heroic no tiene `%command%`: usa un *wrapper*. En la configuración del juego → **Otros** → **Usar wrapper**, añade uno con comando `/home/TU_USUARIO/.local/bin/gamepad` y argumentos `run`. En sistemas atómicos (Bazzite, Silverblue, Kinoite) usa la ruta real de tu carpeta personal, la que muestra `echo $HOME` (`/var/home/TU_USUARIO/...`): dentro del Flatpak `/home` puede no existir y Heroic no encontraría el wrapper (el juego no abre). Para los FPS, activa también MangoHud en Heroic (en Flatpak necesita la extensión `org.freedesktop.Platform.VulkanLayer.MangoHud`).
 
 Dentro del Flatpak el lanzador usa el `python3` del sandbox (solo necesita la biblioteca estándar), se comunica con el servicio por `~/.cache/gamepad/hub.sock` y deja su registro en `~/.cache/gamepad/launcher.log`. Si en el sandbox no hubiera Python, el juego se lanza igual, sin datos. Requiere que Heroic tenga acceso a tu carpeta personal.
 
