@@ -41,6 +41,9 @@ RESCAN_EVERY = 10.0
 # 1.03.1 con el diagnóstico "grupo?" y el grupo real del jugador. Se valida contra los registros.
 PARTY_LIST = 0x5145C
 PARTY_MAX = 4
+# Posiciones que coincidieron con el grupo real en la primera partida analizada (1.03.1);
+# se escriben en cada carga para comparar con el grupo que muestra el menú en otras partidas.
+PARTY_PROBES = (0x5145C, 0x12A9E4, 0x6915BC, 0x1103DC, 0x1109FC, 0x623A18)
 DIFF_EVERY = 2.0                 # s: comparación de memoria para ver dónde cambia el grupo
 DIFF_CHUNK = 64 << 10
 # Función del juego "EXP que falta para el siguiente nivel" (script "Selected Character"):
@@ -431,14 +434,22 @@ class Plugin(GamePlugin):
                           + ' '.join(f'{x:X}' for x in words), flush=True)
                 except (MemoryReadError, struct.error):
                     pass
-            pending = [] if active else list(party.LAYOUTS)   # el diagnóstico solo si no hay lista
+            for off in PARTY_PROBES:      # para comparar con el grupo del menú entre partidas
+                try:
+                    raw = mem.read(self.block + off, 16)
+                    print(f'[trails2] sonda bloque+0x{off:X}: u16 '
+                          + ' '.join(str(NAMES.get(v, v)) for v in struct.unpack('<8H', raw))
+                          + f' | bytes {raw.hex(" ")}', flush=True)
+                except MemoryReadError:
+                    pass
+            pending = list(party.LAYOUTS)   # candidatos a lista del grupo, en cada carga
             self._party_scan = (pending, set(NAMES) | set(self.records), [])
-            self._party_note = 'buscando…' if pending else self._party_src
+            self._party_note = f'{self._party_src} (buscando listas…)'
         layouts, ids, hits = self._party_scan
         if layouts:                     # una forma de lista por lectura: ninguna se alarga
             hits += party.candidates(mem, self.block, SCAN_SIZE, ids, [layouts.pop(0)])
             if not layouts:
-                self._party_note = party.describe(hits, self.block, NAMES)
+                self._party_note = f'{self._party_src}; ' + party.describe(hits, self.block, NAMES)
                 for line in party.describe(hits, self.block, NAMES, limit=1000).split(' | '):
                     print(f'[trails2] grupo? {line}', flush=True)
         values['dbg_party'] = self._party_note

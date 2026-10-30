@@ -133,7 +133,7 @@ def test_el_plugin_es_valido_para_el_hub(tmp_path):
     from server import plugins as P
     from conftest import ROOT
     ids = {p.id: p for p in P.load_plugins(ROOT / 'plugins')}
-    assert ids['trails2'].version == '0.7.4'
+    assert ids['trails2'].version == '0.7.5'
 
 
 def test_un_array_de_numeros_parecidos_no_gana_al_grupo(attach):
@@ -166,7 +166,7 @@ def test_lista_del_grupo_en_el_diagnostico(attach, capsys):
     for i, cid in enumerate((0, 2, 4, 3)):                 # Estelle, Scherazard, Kloe, Olivier
         g.mem.put('u16', g.block + 0x50000 + i * 2, cid)
     plugin = attach(g)
-    assert plugin.read(g.mem)['dbg_party'] == 'buscando…'   # una forma de lista por lectura
+    assert plugin.read(g.mem)['dbg_party'].endswith('(buscando listas…)')   # una forma por lectura
     for _ in range(10):
         v = plugin.read(g.mem)
     assert 'u16/2 +0x50000: Estelle, Scherazard, Kloe, Olivier' in v['dbg_party']
