@@ -133,7 +133,7 @@ def test_el_plugin_es_valido_para_el_hub(tmp_path):
     from server import plugins as P
     from conftest import ROOT
     ids = {p.id: p for p in P.load_plugins(ROOT / 'plugins')}
-    assert ids['trails2'].version == '0.7.2'
+    assert ids['trails2'].version == '0.7.3'
 
 
 def test_un_array_de_numeros_parecidos_no_gana_al_grupo(attach):
@@ -424,3 +424,18 @@ def test_una_lista_ajena_que_cambia_no_se_adopta(attach):
     g.mem.put('u16', g.block + 0x200000, 1)
     plugin._next_diff = 0.0
     assert plugin.read(g.mem)['p2_name'] == 'Scherazard'
+
+
+def test_registra_los_cambios_de_personaje_en_memoria(attach, capsys):
+    g = loaded()
+    for i, cid in enumerate((0, 7, 4, 3)):
+        g.mem.put('u16', g.block + 0x5145C + i * 2, cid)
+    for i, cid in enumerate((0, 7, 4, 3)):                     # el juego lo guarda como u32 cada 8
+        g.mem.put('u32', g.block + 0x300000 + i * 8, cid)
+    plugin = attach(g)
+    plugin.read(g.mem)
+    g.mem.put('u32', g.block + 0x300008, 6)                    # Zin -> Tita
+    plugin._next_diff = 0.0
+    plugin.read(g.mem)
+    out = capsys.readouterr().out
+    assert 'cambio u32 bloque+0x300008: Zin -> Tita' in out and 'cambio u8 bloque+0x300008' in out

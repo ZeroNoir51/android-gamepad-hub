@@ -135,6 +135,7 @@ class Plugin(GamePlugin):
         self._party_off = PARTY_LIST    # lista de la que se lee el grupo
         self._watch = {}                # copias de la lista del grupo: offset -> últimos 8 bytes
         self._snap = {}                 # trozo del bloque -> bytes de la última comparación
+        self._swaps_logged = 0
         self._next_diff = 0.0
         self._party_note = ''
         self._exp_note = self.curve_note
@@ -311,6 +312,7 @@ class Plugin(GamePlugin):
             self._snap[pos] = new
             if old is None or old == new or adopted:
                 continue
+            self._log_swaps(pos, old, new, ids)
             for m in known.finditer(new):
                 i = m.start()
                 if i % 2 or i + 2 > len(old):
@@ -343,6 +345,30 @@ class Plugin(GamePlugin):
                 if adopted:
                     break
         return adopted
+
+    def _log_swaps(self, pos, old, new, ids):
+        """Diagnóstico: cada sitio donde un miembro del grupo pasa a ser otro personaje, como
+        u8, u16 o u32, con los bytes de alrededor (para ver cómo guarda el juego el grupo)."""
+        if self._swaps_logged >= 60:
+            return
+        x = (int.from_bytes(old, 'little') ^ int.from_bytes(new, 'little')).to_bytes(len(new), 'little')
+        seen = set()
+        for m in re.finditer(rb'[^\x00]', x):
+            for width, fmt in ((1, '<B'), (2, '<H'), (4, '<I')):
+                s = m.start() & ~(width - 1)
+                if (s, width) in seen or s + width > len(new):
+                    continue
+                seen.add((s, width))
+                was = struct.unpack_from(fmt, old, s)[0]
+                now_id = struct.unpack_from(fmt, new, s)[0]
+                if was in ids and now_id in NAMES and now_id not in ids:
+                    a, b = max(0, s - 16), min(len(new), s + 16)
+                    print(f'[trails2] cambio u{width * 8} bloque+0x{pos + s:X}: {NAMES[was]} -> {NAMES[now_id]} | '
+                          f'antes {old[a:b].hex(" ")} | ahora {new[a:b].hex(" ")} (desde +0x{pos + a:X})',
+                          flush=True)
+                    self._swaps_logged += 1
+                    if self._swaps_logged >= 60:
+                        return
 
     def _record_of(self, mem, ids):
         """{ID: dirección} para esos personajes: de la serie o, si no están, buscándolos por ID
