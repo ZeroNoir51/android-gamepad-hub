@@ -133,10 +133,36 @@ class Plugin(GamePlugin):
             note = (f'EXP total = {curve.mul}·N·(N+{curve.add}) × {curve.mult:g} '
                     f'(exe+0x{func - self.base:X})')
             print(f'[trails2] {note}', flush=True)
+            self._dump_lookups(mem, func)
             return curve, note
         except (SignatureError, MemoryReadError) as ex:
             print(f'[trails2] sin "siguiente nivel": {ex}', flush=True)
             return None, str(ex)
+
+    def _dump_lookups(self, mem, func):
+        """Diagnóstico (una vez, a launcher.log): el multiplicador propio de cada personaje
+        sale de dos búsquedas en tablas del juego; se vuelca su código para poder leerlas."""
+        try:
+            code = mem.read(func, expcurve.FUNC_SIZE)
+            g = code.find(b'\x48\x8B\x35')                 # mov rsi,[rip+disp]: gestor de datos
+            if g >= 0:
+                slot = rip_target(mem, func + g, 3, 7)
+                mgr = mem.ptr(slot)
+                print(f'[trails2] datos: exe+0x{slot - self.base:X} -> 0x{mgr:X}', flush=True)
+                for off in (0x10, 0x28):
+                    p = mem.ptr(mgr + off)
+                    print(f'[trails2]   [+0x{off:X}] 0x{p:X} -> [+8] 0x{mem.ptr(p + 8):X}', flush=True)
+            targets = []
+            for pat in (b'\x48\x8B\xCD\xE8', b'\x48\x8B\x49\x08\xE8'):   # las dos búsquedas
+                i = code.find(pat)
+                if i >= 0:
+                    targets.append(rip_target(mem, func + i + len(pat) - 1, 1, 5))
+            for t in targets:
+                data = mem.read(t, 0xC0)
+                for i in range(0, len(data), 32):
+                    print(f'[trails2] busqueda exe+0x{t + i - self.base:X}: {data[i:i + 32].hex(" ")}', flush=True)
+        except MemoryReadError as ex:
+            print(f'[trails2] sin volcado de las búsquedas: {ex}', flush=True)
 
     # --- personajes ---
     def _roster(self, mem, block):
