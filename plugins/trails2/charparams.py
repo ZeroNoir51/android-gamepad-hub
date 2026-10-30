@@ -5,8 +5,10 @@ La función de EXP total del juego los obtiene así (desensamblado de la 1.03.1)
   mgr = [exe+global]                          (mov rsi,[rip+disp] en la función de EXP)
   T   = [[mgr+0x10]+8]  -> búsqueda 1 (exe+0x255880): tabla de parámetros por ID
         idx = [T+0x28]; desc = [T+0x20] + idx*0x50
-        n = u32 [desc+0x4C]; paso = u32 [desc+0x48]; ini = u64 [desc+0x44]; base = [T+0x10]
+        n = u32 [desc+0x4C]; paso = u32 [desc+0x48]; ini = [desc+0x44]; base = [T+0x10]
         entrada i = base + ini + (paso*i mod 2^32), con u16 [entrada] == ID
+        (el código lee ini como u64, pero sus 32 bits altos son el paso: en la 1.03.1 vale
+        solo la parte baja, p. ej. ini 0x58, paso 0x68, 1583 entradas)
   clave = texto en [[entrada+0x40]]           -> CRC32 del texto (texto vacío: 0xFFFFFFFF)
   T2  = [[mgr+0x28]+8]  -> búsqueda 2 (exe+0x258970): unordered_map de MSVC
         nodos de una lista: {siguiente, anterior, clave u32 (+0x10), valor (+0x18)}
@@ -30,21 +32,22 @@ def _entry(mem, mgr, cid):
     idx = struct.unpack('<i', mem.read(t + 0x28, 4))[0]
     desc = mem.ptr(t + 0x20) + idx * 0x50
     n, step = mem.u32(desc + 0x4C), mem.u32(desc + 0x48)
-    start = (mem.ptr(t + 0x10) + mem.u64(desc + 0x44)) & MASK64
-    print(f'[trails2]   tabla de parámetros: T=0x{t:X} idx={idx} desc=0x{desc:X} n={n} paso=0x{step:X} '
-          f'ini=0x{mem.u64(desc + 0x44):X} base=0x{mem.ptr(t + 0x10):X} -> 0x{start:X}', flush=True)
+    base, ini = mem.ptr(t + 0x10), mem.u64(desc + 0x44)
     if not 0 < n <= MAX_ENTRIES:
         raise MemoryReadError(f'tabla de parámetros con {n} entradas')
-    try:
-        print('[trails2]   primeros IDs: ' + ' '.join(
-            str(mem.u16((start + (step * i & 0xFFFFFFFF)) & MASK64)) for i in range(min(n, 12))), flush=True)
-    except MemoryReadError as ex:
-        print(f'[trails2]   primeros IDs: {ex}', flush=True)
-    for i in range(n):
-        addr = (start + (step * i & 0xFFFFFFFF)) & MASK64
-        if mem.u16(addr) == cid:
-            return addr
-    return None
+    # El código suma el u64 de +0x44, pero en la 1.03.1 sus 32 bits altos son el paso (+0x48)
+    # y la dirección no existe; vale la primera forma con la que la tabla se puede leer.
+    for start in ((base + ini) & MASK64, (base + (ini & 0xFFFFFFFF)) & MASK64):
+        try:
+            mem.u16(start)
+        except MemoryReadError:
+            continue
+        for i in range(n):
+            addr = (start + (step * i & 0xFFFFFFFF)) & MASK64
+            if mem.u16(addr) == cid:
+                return addr
+        return None
+    raise MemoryReadError(f'tabla de parámetros ilegible (base 0x{base:X}, +0x44 = 0x{ini:X})')
 
 
 def _nodes(mem, mgr):

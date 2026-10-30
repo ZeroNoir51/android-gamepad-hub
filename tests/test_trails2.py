@@ -133,7 +133,7 @@ def test_el_plugin_es_valido_para_el_hub(tmp_path):
     from server import plugins as P
     from conftest import ROOT
     ids = {p.id: p for p in P.load_plugins(ROOT / 'plugins')}
-    assert ids['trails2'].version == '0.7.0'
+    assert ids['trails2'].version == '0.7.1'
 
 
 def test_un_array_de_numeros_parecidos_no_gana_al_grupo(attach):
@@ -331,8 +331,7 @@ def with_char_params(g, total, params):
     put('u64', t + 0x20, desc - 0x50)
     entries, step = heap + 0x1000, 0x60
     put('u32', desc + 0x44, 0x10), put('u32', desc + 0x48, step), put('u32', desc + 0x4C, len(params))
-    qword = 0x10 | step << 32                                  # u64 en +0x44 (incluye el paso, como en el juego)
-    put('u64', t + 0x10, (entries - qword) & ((1 << 64) - 1))
+    put('u64', t + 0x10, entries - 0x10)                     # como en la 1.03.1: vale la parte baja de +0x44
     put('u64', mgr + 0x28, a2), put('u64', a2 + 8, t2), put('u64', t2 + 0x38, head)
     prev = head
     for i, (cid, (name, mult, cap175)) in enumerate(params.items()):
