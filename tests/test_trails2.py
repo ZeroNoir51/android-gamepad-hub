@@ -133,7 +133,7 @@ def test_el_plugin_es_valido_para_el_hub(tmp_path):
     from server import plugins as P
     from conftest import ROOT
     ids = {p.id: p for p in P.load_plugins(ROOT / 'plugins')}
-    assert ids['trails2'].version == '0.4.0'
+    assert ids['trails2'].version == '0.5.0'
 
 
 def test_un_array_de_numeros_parecidos_no_gana_al_grupo(attach):
@@ -286,3 +286,28 @@ def test_sin_lista_valida_usa_los_primeros_registros(attach):
     g.mem.put('u16', g.block + 0x5145C, 0)                     # ceros: no es una lista
     v = attach(g).read(g.mem)
     assert v['p1_name'] == 'Estelle' and v['p4_name'] == 'Olivier'
+
+
+def test_grupo_con_registros_fuera_de_la_serie(attach, capsys):
+    # Como en la partida real (1.03.1): la serie cada 0x540 solo tiene Olivier, Tita, Zin,
+    # Dorothy, Kurt y Kevin; Estelle, Scherazard y Kloe están en otra zona y no pasan la
+    # comprobación estricta. Se encuentran por ID, con la EXP validada por la fórmula.
+    g = FakeTrails()
+    g.money(83930, SEPITH, 84000.0)
+    with_exp_code(g)
+    serie = [(3, 46, 233_284), (6, 46, 231_721), (7, 47, 230_300), (124, 35, 133_000),
+             (100, 25, 68_600), (119, 35, 135_887)]
+    for i, (cid, lv, exp) in enumerate(serie):
+        g.character(i, cid, lv, exp, 3000, 3100, 500, 520, 100, at=0x114D78, stride=0x540)
+    for i, (cid, lv, exp) in enumerate([(0, 46, 230_000), (2, 46, 229_000), (4, 45, 220_000)]):
+        r = g.character(i, cid, lv, exp, 2000, 2100, 300, 310, 50, at=0x300000, stride=0x2A8)
+        g.mem.put('u32', r + 0x40, 0)                         # MOV = 0: no pasa la estricta
+    g.character(0, 2, 99, 1, 10, 10, 1, 1, 1, at=0x200000)    # ID 2 con EXP absurda: se descarta
+    for i, cid in enumerate((0, 2, 4, 3, 5, 6, 7, 101)):
+        g.mem.put('u16', g.block + 0x5145C + i * 2, cid)
+    v = attach(g).read(g.mem)
+    assert [v[f'p{n}_name'] for n in range(1, 5)] == ['Estelle', 'Scherazard', 'Kloe', 'Olivier']
+    assert v['p1_lv'] == 'Nv 46 · Sig. 5.000' and v['p4_lv'] == 'Nv 46 · Sig. 1.716'   # Olivier: como el juego
+    out = capsys.readouterr().out
+    assert 'registro de Estelle por ID: bloque+0x300000' in out
+    assert 'grupo? ' not in out                                # la lista ya cuadra: sin diagnóstico

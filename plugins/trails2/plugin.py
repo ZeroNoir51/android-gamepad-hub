@@ -122,7 +122,10 @@ class Plugin(GamePlugin):
         self._next_scan = 0.0
         self._scan_note = 'sin buscar'
         self._party_scan = None       # (formas pendientes, IDs, coincidencias)
-        self.records = {}             # ID -> dirección del registro
+        self.records = {}             # ID -> dirección del registro (serie)
+        self._by_id = {}              # ID -> [direcciones] buscadas por ID (fuera de la serie)
+        self._next_id_scan = 0.0
+        self._lookups_dumped = False
         self._party_src = ''
         self._party_note = ''
         self._exp_note = self.curve_note
@@ -139,7 +142,7 @@ class Plugin(GamePlugin):
             note = (f'EXP total = {curve.mul}·N·(N+{curve.add}) × {curve.mult:g} '
                     f'(exe+0x{func - self.base:X})')
             print(f'[trails2] {note}', flush=True)
-            self._dump_lookups(mem, func)
+            self.exp_func = func
             return curve, note
         except (SignatureError, MemoryReadError) as ex:
             print(f'[trails2] sin "siguiente nivel": {ex}', flush=True)
@@ -211,18 +214,39 @@ class Plugin(GamePlugin):
             return None
         ids = []
         for cid in raw[:PARTY_MAX]:
-            if cid not in self.records or cid in ids:
+            if cid not in NAMES or cid in ids:
                 break
             ids.append(cid)
         return ids if len(ids) >= 2 else None    # con ceros (lista vacía) solo saldría Estelle
 
+    def _record_of(self, mem, ids):
+        """{ID: dirección} para esos personajes: de la serie o, si no están, buscándolos por ID
+        en todo el bloque (con la EXP validada por la fórmula). Las búsquedas se espacian."""
+        found = {cid: self.records[cid] for cid in ids if cid in self.records}
+        found.update({cid: self._by_id[cid][0] for cid in ids if cid in self._by_id and cid not in found})
+        missing = [cid for cid in ids if cid not in found]
+        now = time.monotonic()
+        if missing and now >= self._next_id_scan:
+            self._next_id_scan = now + RESCAN_EVERY
+            fits = self.curve.near if self.curve else (lambda level, exp: True)
+            hits = roster.by_id(mem, self.block, SCAN_SIZE, missing, fits)
+            self._by_id.update(hits)
+            for cid in missing:
+                where = ', '.join(f'bloque+0x{a - self.block:X}' for a in hits.get(cid, [])) or 'no encontrado'
+                print(f'[trails2] registro de {NAMES.get(cid, cid)} por ID: {where}', flush=True)
+                if hits.get(cid):
+                    found[cid] = hits[cid][0]
+        return found
+
     def _party(self, mem, values, run):
         first, stride, n = run
         active = self._active_party(mem)
-        if active:
-            members = [self.records[cid] for cid in active]
+        addrs = self._record_of(mem, active) if active else {}
+        if active and len(addrs) >= 2:
+            members = [addrs[cid] for cid in active if cid in addrs]
             self._party_src = f'lista del juego (bloque+0x{PARTY_LIST:X})'
         else:
+            active = None
             members = [first + k * stride for k in range(min(n, 4))]
             self._party_src = 'sin lista del grupo: primeros registros encontrados'
         for slot, addr in enumerate(members, 1):
@@ -275,6 +299,7 @@ class Plugin(GamePlugin):
             return values
         if block != self.block:
             self.block, self.run, self._next_scan, self._party_scan = block, None, 0.0, None
+            self._by_id, self._next_id_scan = {}, 0.0
         *sepith, mira, _, played = MONEY.unpack(mem.read(block + self.play_off - 0x28, MONEY.size))
         if not (math.isfinite(played) and 0 <= played < 1e8) or mira > 999_999_999:
             values['status'] = 'Los datos no cuadran: ¿versión distinta del juego?'
@@ -289,6 +314,9 @@ class Plugin(GamePlugin):
         except MemoryReadError as ex:
             run, self._scan_note = None, f'error buscando personajes: {ex}'
         if run:
+            if not self._lookups_dumped and self.curve:   # con partida cargada: ya hay datos
+                self._lookups_dumped = True
+                self._dump_lookups(mem, self.exp_func)
             self._party(mem, values, run)
             values['status'] = 'Lectura OK'
         else:

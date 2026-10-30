@@ -10,6 +10,7 @@ registros reales (que también pueden cuadrar, pero con IDs que no son de person
 """
 import array
 import collections
+import re
 import struct
 
 from server.plugin_api import MemoryReadError
@@ -117,6 +118,39 @@ def grid(mem, run, lo, hi, span=40):
             continue
         if loose(w, 0):
             out.setdefault(w[0] & 0xFFFF, a)
+    return out
+
+
+def by_id(mem, start, size, ids, fits, limit=8):
+    """{ID: [direcciones]} de registros de esos personajes en todo el bloque, aunque no estén
+    en la serie. fits(nivel, exp) valida la EXP contra la fórmula del juego: un filtro fuerte."""
+    ids = {i for i in ids if 0 <= i <= 0x3FF}
+    if not ids:
+        return {}
+    # ID (u32) seguido de un nivel 1-200: así las zonas de ceros no coinciden con Estelle (ID 0)
+    level = b'[\x01-\xc8]\x00\x00\x00'
+    # (?=...): sin consumir bytes, para que unos ceros justo antes de un registro ("ID 0, nivel 2")
+    # no se coman la coincidencia del registro de verdad
+    rx = re.compile(b'(?=(?:' + b'|'.join(re.escape(struct.pack('<I', i)) for i in sorted(ids)) + b')' + level
+                    + b')', re.DOTALL)
+    out = {}
+    for pos in range(0, size, SCAN_CHUNK):
+        length = min(SCAN_CHUNK + RECORD.size, size - pos)
+        try:
+            data = mem.read(start + pos, length)
+        except MemoryReadError:
+            continue
+        for m in rx.finditer(data):
+            i = m.start()
+            if i % 4 or i >= SCAN_CHUNK or i + RECORD.size > len(data):
+                continue
+            v = RECORD.unpack_from(data, i)
+            cid, level, exp, hp, hp_max, ep, ep_max, cp, cp_max = v[0], *v[2:10]
+            if (1 <= level <= 200 and 1 <= hp_max <= 999_999 and hp <= hp_max and ep <= ep_max <= 99_999
+                    and cp <= cp_max <= 300 and fits(level, exp)):
+                found = out.setdefault(cid, [])
+                if len(found) < limit:
+                    found.append(start + pos + i)
     return out
 
 

@@ -43,6 +43,14 @@ class Curve:
             return 0
         return max(0, self.total(level + 1) - exp)
 
+    def near(self, level, exp, slack=0.15):
+        """¿Cuadra la EXP con el nivel, admitiendo multiplicadores propios de hasta ±15 %?"""
+        if level >= self.cap:
+            return exp >= self.total(self.cap) * (1 - slack)
+        if level == 1 and exp < self.total(2):
+            return True
+        return self.total(level) * (1 - slack) <= exp < self.total(level + 1) * (1 + slack)
+
     def consistent(self, level, exp):
         return level >= self.cap or self.total(level) <= exp < self.total(level + 1)
 
