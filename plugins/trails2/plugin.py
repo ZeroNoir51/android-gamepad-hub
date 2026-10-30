@@ -13,8 +13,8 @@ Solo lectura. Firmas y offsets de la tabla sora_2nd-v2.CT (Tuuuup!, sora_2nd.exe
                      EP, CP...). La tabla consigue la dirección inyectando código; aquí
                      se buscan los registros dentro del bloque (ver roster.py).
                      Verificado en el juego (1.03.1): nivel y EXP correctos.
-  Siguiente nivel:   el juego lo calcula (EXP total del nivel siguiente - EXP); se vuelca
-                     a launcher.log el código de esa función para localizar la tabla.
+  Siguiente nivel:   el juego lo calcula: EXP total(N+1) - EXP, con EXP total = 100·N·(N+3)
+                     por un multiplicador (ver expcurve.py; constantes leídas del código).
 
 Sin verificar en el juego todavía: dónde están los registros de personaje y qué
 miembros forman el grupo (se muestran los 4 primeros del array). Los diagnósticos
@@ -26,7 +26,7 @@ import time
 
 from server.plugin_api import Field, GamePlugin, MemoryReadError, PortraitFinder, pe_info
 
-from . import party, roster
+from . import expcurve, party, roster
 from .scan import SignatureError, find_one, rip_target
 
 MODULE = 'sora_2nd.exe'
@@ -37,7 +37,7 @@ MONEY = struct.Struct('<8IIId')  # sepith x8, Mira, (relleno), tiempo de juego: 
 SCAN_SIZE = 0x700000             # el bloque llega al menos a +0x6247C0 (script del tiempo de juego)
 RESCAN_EVERY = 10.0
 # Función del juego "EXP que falta para el siguiente nivel" (script "Selected Character"):
-# su código llama a la que da la EXP total de un nivel; se vuelca al log para localizar la tabla.
+# su código llama a la que da la EXP total de un nivel; de esa se lee la fórmula (expcurve.py).
 AOB_NEXT_LEVEL = '448B4304443BC07C??33C0488B5C2430'
 NEXT_LEVEL_FUNC = -0x4E          # inicio de la función respecto a la firma
 NEXT_LEVEL_CALL = 0x1E           # call a la función de EXP total
@@ -87,6 +87,7 @@ class Plugin(GamePlugin):
         Field('dbg_sig', 'Diag. firmas', kind='text', section='info'),
         Field('dbg_roster', 'Diag. personajes', kind='text', section='info'),
         Field('dbg_party', 'Diag. grupo', kind='text', section='info'),
+        Field('dbg_exp', 'Diag. EXP', kind='text', section='info'),
     ]
 
     def on_attach(self, mem, proc):
@@ -110,32 +111,32 @@ class Plugin(GamePlugin):
                 self.play_off, self.play_src = add, 'leído de la firma'
         except SignatureError:
             pass
-        self._dump_next_level(mem)
+        self.curve, self.curve_note = self._exp_curve(mem)
         self.portraits = PortraitFinder(self.id)
         self.block = None
         self.run = None              # (primer registro, separación, cuántos)
         self._next_scan = 0.0
         self._scan_note = 'sin buscar'
-        self._party_note = None
+        self._party_scan = None       # (formas pendientes, IDs, coincidencias)
+        self._party_note = ''
+        self._exp_note = self.curve_note
 
-    def _dump_next_level(self, mem):
-        """Vuelca a launcher.log (una vez) el código de la función de EXP total por nivel."""
+    def _exp_curve(self, mem):
+        """Fórmula de EXP total por nivel, leída del código del juego."""
         try:
             hit = find_one(mem, self.base, AOB_NEXT_LEVEL, 'siguiente nivel')
-            func = hit + NEXT_LEVEL_FUNC
             call = hit + NEXT_LEVEL_CALL
             if mem.u8(call) != 0xE8:
                 raise SignatureError('siguiente nivel: no hay call donde se esperaba')
-            target = rip_target(mem, call, 1, 5)
-            print(f'[trails2] EXP siguiente nivel: función exe+0x{func - self.base:X}, '
-                  f'EXP total exe+0x{target - self.base:X}', flush=True)
-            for name, addr, size in (('siguiente', func, 0x80), ('total', target, 0x100)):
-                code = mem.read(addr, size)
-                for i in range(0, size, 32):
-                    print(f'[trails2] {name} exe+0x{addr + i - self.base:X}: {code[i:i + 32].hex(" ")}',
-                          flush=True)
+            func = rip_target(mem, call, 1, 5)
+            curve = expcurve.from_code(mem, func)
+            note = (f'EXP total = {curve.mul}·N·(N+{curve.add}) × {curve.mult:g} '
+                    f'(exe+0x{func - self.base:X})')
+            print(f'[trails2] {note}', flush=True)
+            return curve, note
         except (SignatureError, MemoryReadError) as ex:
-            print(f'[trails2] sin volcado de la EXP por nivel: {ex}', flush=True)
+            print(f'[trails2] sin "siguiente nivel": {ex}', flush=True)
+            return None, str(ex)
 
     # --- personajes ---
     def _roster(self, mem, block):
@@ -156,6 +157,18 @@ class Plugin(GamePlugin):
             self._scan_note = f'ningún registro en bloque+0..0x{SCAN_SIZE:X} ({took:.1f} s)'
         return self.run
 
+    def _level_text(self, rec):
+        level, exp = rec['level'], rec['exp']
+        if not self.curve:
+            return f'Nv {level}'
+        if not self.curve.consistent(level, exp):
+            # p. ej. un multiplicador propio del personaje: mejor no mostrar un número falso
+            self._exp_note = (f'{self.curve_note}; no cuadra con {NAMES.get(rec["id"], rec["id"])} '
+                              f'(Nv {level}, {fmt(exp)} EXP)')
+            return f'Nv {level}'
+        nxt = self.curve.next(level, exp)
+        return f'Nv {level} · Siguiente {fmt(nxt)}' if nxt else f'Nv {level} · Máx.'
+
     def _party(self, mem, values, run):
         first, stride, n = run
         seen = []
@@ -167,17 +180,27 @@ class Plugin(GamePlugin):
                 continue
             values[f'p{slot}_name'] = NAMES.get(rec['id'], f'ID {rec["id"]}')
             values[f'p{slot}_img'] = self.portraits.url(rec['id'], PORTRAITS.get(rec['id'], ()))
-            values[f'p{slot}_lv'] = f'Nv {rec["level"]}'
+            values[f'p{slot}_lv'] = self._level_text(rec)
             for key in ('hp', 'hp_max', 'ep', 'ep_max', 'cp', 'cp_max'):
                 values[f'p{slot}_{key}'] = rec[key]
         listing = ', '.join(f'{NAMES.get(r["id"], r["id"])} Nv{r["level"]}' for r in seen[:16])
         values['dbg_roster'] = f'{self._scan_note}: {listing}'
-        if self._party_note is None:   # una vez por partida: candidatos a lista del grupo
-            ids = {r['id'] for r in seen}
-            hits = party.candidates(mem, self.block, SCAN_SIZE, ids)
-            self._party_note = party.describe(hits, self.block, NAMES)
-            for line in party.describe(hits, self.block, NAMES, limit=60).split(' | '):
-                print(f'[trails2] grupo? {line}', flush=True)
+        values['dbg_exp'] = self._exp_note
+        if self._party_scan is None:   # una vez por partida: personajes y candidatos a lista del grupo
+            print(f'[trails2] personajes: {self._scan_note}', flush=True)
+            for k, r in enumerate(seen):
+                print(f'[trails2]   #{k} bloque+0x{first + k * stride - self.block:X} ID {r["id"]} '
+                      f'{NAMES.get(r["id"], "?")} Nv {r["level"]} EXP {r["exp"]} '
+                      f'HP {r["hp"]}/{r["hp_max"]} EP {r["ep"]}/{r["ep_max"]} CP {r["cp"]}', flush=True)
+            self._party_scan = (list(party.LAYOUTS), set(NAMES) | {r['id'] for r in seen}, [])
+            self._party_note = 'buscando…'
+        layouts, ids, hits = self._party_scan
+        if layouts:                     # una forma de lista por lectura: ninguna se alarga
+            hits += party.candidates(mem, self.block, SCAN_SIZE, ids, [layouts.pop(0)])
+            if not layouts:
+                self._party_note = party.describe(hits, self.block, NAMES)
+                for line in party.describe(hits, self.block, NAMES, limit=1000).split(' | '):
+                    print(f'[trails2] grupo? {line}', flush=True)
         values['dbg_party'] = self._party_note
 
     def read(self, mem):
@@ -192,7 +215,7 @@ class Plugin(GamePlugin):
             values['status'] = 'Esperando a que el juego cree sus datos'
             return values
         if block != self.block:
-            self.block, self.run, self._next_scan, self._party_note = block, None, 0.0, None
+            self.block, self.run, self._next_scan, self._party_scan = block, None, 0.0, None
         *sepith, mira, _, played = MONEY.unpack(mem.read(block + self.play_off - 0x28, MONEY.size))
         if not (math.isfinite(played) and 0 <= played < 1e8) or mira > 999_999_999:
             values['status'] = 'Los datos no cuadran: ¿versión distinta del juego?'

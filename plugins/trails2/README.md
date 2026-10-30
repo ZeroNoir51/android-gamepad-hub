@@ -4,9 +4,9 @@ Plugin de solo lectura para `sora_2nd.exe` (Steam, GOG o Heroic, vía Proton). N
 
 Muestra:
 
-- **Grupo** (4 primeros miembros): retrato, nombre, nivel, HP, EP y CP, con tarjetas al estilo del juego (barras inclinadas y el CP como anillo del retrato).
+- **Grupo** (4 primeros registros, por ahora): retrato, nombre, nivel y EXP para el siguiente, HP, EP y CP, con tarjetas al estilo del juego (barras inclinadas y el CP como anillo del retrato).
 - **Mira** y **tiempo de juego**.
-- Con *Debug*: qué firmas se encontraron y dónde están los registros de personaje.
+- Con *Debug*: qué firmas se encontraron, dónde están los registros de personaje y la fórmula de EXP. `launcher.log` lista todos los personajes encontrados y los candidatos a la lista del grupo.
 
 ## Cómo encuentra los datos
 
@@ -22,7 +22,7 @@ No usa direcciones fijas: si la versión del juego no coincide, lo dice (*Estado
 
 - Verificado (1.03.1): Mira, tiempo de juego, nivel y EXP.
 - Qué miembros forman el grupo activo: por ahora se muestran los 4 primeros del array. *Diag. grupo* lista los candidatos a esa lista en memoria.
-- **Siguiente nivel**: el juego lo calcula con una función; el plugin vuelca su código (solo lectura) a `launcher.log` para localizar la tabla de EXP.
+- **Siguiente nivel**: con la fórmula del propio juego (`expcurve.py`): EXP total del nivel N = 100·N·(N+3) × multiplicador; las constantes se leen de su código. Si la EXP de un personaje no cuadra (multiplicador propio), solo se muestra el nivel y *Diag. EXP* lo dice. Por confirmar contra el valor del menú.
 - Los nombres de los IDs 0-7 (orden habitual de la saga). Los invitados (Kurt, Anelace, Josette, Schwarz, Vander, Kevin, Dorothy) vienen de la tabla.
 
 Si algo no cuadra, activa *Debug* y comparte los campos *Diag.* y `launcher.log`.

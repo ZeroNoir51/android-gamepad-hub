@@ -133,7 +133,7 @@ def test_el_plugin_es_valido_para_el_hub(tmp_path):
     from server import plugins as P
     from conftest import ROOT
     ids = {p.id: p for p in P.load_plugins(ROOT / 'plugins')}
-    assert ids['trails2'].version == '0.2.0'
+    assert ids['trails2'].version == '0.3.0'
 
 
 def test_un_array_de_numeros_parecidos_no_gana_al_grupo(attach):
@@ -165,8 +165,11 @@ def test_lista_del_grupo_en_el_diagnostico(attach, capsys):
     g = loaded()
     for i, cid in enumerate((0, 2, 4, 3)):                 # Estelle, Scherazard, Kloe, Olivier
         g.mem.put('u16', g.block + 0x50000 + i * 2, cid)
-    v = attach(g).read(g.mem)
-    assert 'u16 +0x50000: Estelle, Scherazard, Kloe, Olivier' in v['dbg_party']
+    plugin = attach(g)
+    assert plugin.read(g.mem)['dbg_party'] == 'buscando…'   # una forma de lista por lectura
+    for _ in range(10):
+        v = plugin.read(g.mem)
+    assert 'u16/2 +0x50000: Estelle, Scherazard, Kloe, Olivier' in v['dbg_party']
     assert 'grupo? ' in capsys.readouterr().out
 
 
@@ -179,18 +182,75 @@ def test_retratos(attach, data_home):
     assert v['p1_img'] == '/portraits/trails2/estelle.png' and v['p2_img'] is None
 
 
-def test_vuelca_el_codigo_de_la_exp_por_nivel(attach, capsys):
+# Código real de sora_2nd.exe 1.03.1 (launcher.log del usuario): "siguiente nivel" en
+# exe+0xF9C20 y "EXP total" en exe+0xF9B30.
+SIGUIENTE = bytes.fromhex(
+    '48895c2408574883ec20488b3d172bb600488bd9488b4f108b13488b4908e83d'
+    'bc15004885c07421488b4f28488b5040488b4908e817ed15004885c0740b8078'
+    '1001b8af0000007405b8c8000000448b4304443bc07c0d33c0488b5c24304883'
+    'c4205fc38b1341ffc0488bcbe89ffeffff2b4308488b5c24304883c4205fc3cc')
+TOTAL = bytes.fromhex(
+    '48895c240848896c241048897424184889 7c2420415648 83ec20418bd88bfa81'.replace(' ', '')
+    + 'faffff000075028b11488b35e82bb600488b4610488b6808488bcde810bd1500'
+    '4885c07421488b4e28488b5040488b4908e8eaed15004885c0740b80781001b8'
+    'af0000007405b8c80000003bd88bd7488bcd0f4fd84533f68d43030fafc36bd8'
+    '64e8cabc15004885c07442488b4e28488b5040488b4908e8a4ed15004885c074'
+    '0af30f1090e8000000eb08f30f1015712fa300660f6ec30f5bc00f28c8f30f59'
+    'caf30f5cc8f30f2cc103c3eb04418d041e488b5c2430488b6c2438488b742440'
+    '488b7c24484883c420415ec3cccccccc48895c2408574883ec20488b3d172bb6')
+
+
+def with_exp_code(g, mult=1.0):
+    """Pone el código real en la imagen sintética (misma distancia entre funciones)."""
     import struct
+    total = BASE + TEXT_RVA + 0x10000
+    g.mem.write(total, TOTAL)
+    g.mem.write(total + 0xF0, SIGUIENTE)
+    movss = total + 0xAB                                   # f3 0f 10 15 <disp>: multiplicador por defecto
+    const = BASE + 0x50000 + 0x100                          # en .data de la imagen sintética
+    g.mem.put('f32', const, mult)
+    g.mem.write(movss + 4, struct.pack('<i', const - (movss + 8)))
+    return total
+
+
+def test_formula_de_exp_leida_del_codigo_real(trails):
+    expcurve = load_plugin('trails2', 'expcurve')
     g = loaded()
-    hit = BASE + TEXT_RVA + 0x6000 + 0x4E
-    g.mem.write(hit, bytes.fromhex('448B4304443BC07C0D33C0488B5C2430'))
-    call = hit + 0x1E
-    target = BASE + TEXT_RVA + 0x5F10
-    g.mem.write(call, b'\xE8' + struct.pack('<i', target - (call + 5)))
-    g.mem.write(target, bytes.fromhex('4889'))
-    attach(g)
+    total = with_exp_code(g)
+    curve = expcurve.from_code(g.mem, total)
+    assert (curve.add, curve.mul, curve.mult) == (3, 100, 1.0)
+    assert curve.total(47) == 100 * 47 * 50 and curve.total(1) == 400
+    assert curve.total(46) == 225_400 and curve.next(46, 230_000) == 5_000
+    assert curve.consistent(46, 230_000) and not curve.consistent(46, 220_000) and not curve.consistent(46, 300_000)
+    assert curve.next(200, 9_999_999) == 0
+    boosted = expcurve.Curve(3, 100, 1.5)                   # multiplicador: base + trunc(base*0.5)
+    assert boosted.total(10) == 13_000 + 6_500
+
+
+def test_siguiente_nivel_en_las_tarjetas(attach, capsys):
+    g = FakeTrails()
+    g.money(1, SEPITH, 10.0)
+    g.character(0, 0, 46, 230_000, 900, 1000, 80, 100, 50)    # Estelle
+    g.character(1, 3, 46, 300_000, 900, 1000, 80, 100, 50)    # EXP que no cuadra con la fórmula
+    with_exp_code(g)
+    plugin = attach(g)
+    assert 'EXP total = 100·N·(N+3) × 1' in capsys.readouterr().out
+    v = plugin.read(g.mem)
+    assert v['p1_lv'] == 'Nv 46 · Siguiente 5.000'
+    assert v['p2_lv'] == 'Nv 46' and 'no cuadra con Olivier' in v['dbg_exp']
+
+
+def test_sin_codigo_de_exp_solo_el_nivel(attach, capsys):
+    g = loaded()
+    v = attach(g).read(g.mem)
+    assert v['p1_lv'] == 'Nv 20' and 'sin "siguiente nivel"' in capsys.readouterr().out
+
+
+def test_registra_los_personajes_en_el_log(attach, capsys):
+    g = loaded()
+    attach(g).read(g.mem)
     out = capsys.readouterr().out
-    assert f'EXP total exe+0x{target - BASE:X}' in out and f'total exe+0x{target - BASE:X}: 48 89' in out
+    assert '[trails2]   #0 bloque+0x18000 ID 0 Estelle Nv 20' in out and '#9 ' in out
 
 
 def test_estilo_de_tarjetas(trails):
