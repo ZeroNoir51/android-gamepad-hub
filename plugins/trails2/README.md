@@ -4,7 +4,7 @@ Plugin de solo lectura para `sora_2nd.exe` (Steam, GOG o Heroic, vía Proton). N
 
 Muestra:
 
-- **Grupo** (4 primeros registros, por ahora): retrato, nombre, nivel y EXP para el siguiente, HP, EP y CP, con tarjetas al estilo del juego (barras inclinadas y el CP como anillo del retrato).
+- **Grupo activo** (los 4 del juego, en su orden): retrato, nombre, nivel y EXP para el siguiente, HP, EP y CP, con tarjetas al estilo del juego (barras inclinadas y el CP como anillo del retrato).
 - **Mira** y **tiempo de juego**.
 - Con *Debug*: qué firmas se encontraron, dónde están los registros de personaje y la fórmula de EXP. `launcher.log` lista todos los personajes encontrados y los candidatos a la lista del grupo.
 
@@ -21,7 +21,7 @@ No usa direcciones fijas: si la versión del juego no coincide, lo dice (*Estado
 ## Pendiente de verificar en el juego
 
 - Verificado (1.03.1): Mira, tiempo de juego, nivel y EXP.
-- Qué miembros forman el grupo activo: por ahora se muestran los 4 primeros del array. *Diag. grupo* lista los candidatos a esa lista en memoria.
+- **Grupo activo**: lista de miembros en el bloque (+0x5145C en la 1.03.1, u16 en orden; los 4 primeros van en el grupo). Se valida contra los registros; si no cuadra, se muestran los primeros registros y *Diag. grupo* busca la lista.
 - **Siguiente nivel**: con la fórmula del propio juego (`expcurve.py`): EXP total del nivel N = 100·N·(N+3) × multiplicador; las constantes se leen de su código. Si la EXP de un personaje no cuadra (multiplicador propio), solo se muestra el nivel y *Diag. EXP* lo dice. Por confirmar contra el valor del menú.
 - Los nombres de los IDs 0-7 (orden habitual de la saga). Los invitados (Kurt, Anelace, Josette, Schwarz, Vander, Kevin, Dorothy) vienen de la tabla.
 

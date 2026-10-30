@@ -41,7 +41,7 @@ def test_lee_mira_tiempo_y_grupo(attach):
     assert (v['p1_hp'], v['p1_hp_max'], v['p1_ep'], v['p1_ep_max'], v['p1_cp'], v['p1_cp_max']) == \
         (900, 1000, 80, 100, 50, 200)
     assert v['p4_name'] == 'Olivier' and 'p5_name' not in v
-    assert f'serie de 10 cada 0x{STRIDE:X}' in v['dbg_roster'] and 'Kevin Nv29' in v['dbg_roster']
+    assert f'serie de 10 cada 0x{STRIDE:X}' in v['dbg_roster'] and 'Kevin' in v['dbg_roster']
     assert 'leído de la firma' in v['dbg_sig']
 
 
@@ -133,7 +133,7 @@ def test_el_plugin_es_valido_para_el_hub(tmp_path):
     from server import plugins as P
     from conftest import ROOT
     ids = {p.id: p for p in P.load_plugins(ROOT / 'plugins')}
-    assert ids['trails2'].version == '0.3.0'
+    assert ids['trails2'].version == '0.4.0'
 
 
 def test_un_array_de_numeros_parecidos_no_gana_al_grupo(attach):
@@ -250,7 +250,7 @@ def test_registra_los_personajes_en_el_log(attach, capsys):
     g = loaded()
     attach(g).read(g.mem)
     out = capsys.readouterr().out
-    assert '[trails2]   #0 bloque+0x18000 ID 0 Estelle Nv 20' in out and '#9 ' in out
+    assert '[trails2]   bloque+0x18000 ID 0 Estelle Nv 20' in out and 'ID 119 Kevin' in out
 
 
 def test_estilo_de_tarjetas(trails):
@@ -261,3 +261,28 @@ def test_estilo_de_tarjetas(trails):
     import pytest as _p
     with _p.raises(ValueError, match='party_style'):
         P.check_plugin(bad)
+
+
+def test_grupo_activo_desde_la_lista_del_juego(attach, capsys):
+    # Como en la 1.03.1: registros cada 0x540; Estelle no pasa la comprobación estricta
+    # (aquí, MOV fuera de rango) pero está en la rejilla; la lista manda el orden.
+    g = FakeTrails()
+    g.money(83930, SEPITH, 84000.0)
+    order = [5, 0, 2, 4, 3, 6, 7, 124]                       # orden de los registros en memoria
+    for i, cid in enumerate(order):
+        g.character(i, cid, 46, 233_284, 4000 + i, 4074, 800, 871, 165, at=0x114000, stride=0x540)
+    g.mem.put('u32', g.block + 0x114000 + 1 * 0x540 + 0x40, 0)      # MOV de Estelle = 0
+    for i, cid in enumerate((0, 2, 4, 3, 5, 6, 7, 101)):
+        g.mem.put('u16', g.block + 0x5145C + i * 2, cid)
+    v = attach(g).read(g.mem)
+    assert [v[f'p{n}_name'] for n in range(1, 5)] == ['Estelle', 'Scherazard', 'Kloe', 'Olivier']
+    assert v['dbg_party'].startswith('lista del juego')
+    out = capsys.readouterr().out
+    assert 'rejilla bloque+0x114000' in out and 'ID 0 Estelle' in out
+
+
+def test_sin_lista_valida_usa_los_primeros_registros(attach):
+    g = loaded()
+    g.mem.put('u16', g.block + 0x5145C, 0)                     # ceros: no es una lista
+    v = attach(g).read(g.mem)
+    assert v['p1_name'] == 'Estelle' and v['p4_name'] == 'Olivier'

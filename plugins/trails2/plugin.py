@@ -36,6 +36,10 @@ CT_PLAYTIME = 0x20B650           # si falta la firma del tiempo de juego, el de 
 MONEY = struct.Struct('<8IIId')  # sepith x8, Mira, (relleno), tiempo de juego: desde tiempo - 0x28
 SCAN_SIZE = 0x700000             # el bloque llega al menos a +0x6247C0 (script del tiempo de juego)
 RESCAN_EVERY = 10.0
+# Lista de miembros (u16, en orden; los 4 primeros forman el grupo activo). Encontrada en la
+# 1.03.1 con el diagnóstico "grupo?" y el grupo real del jugador. Se valida contra los registros.
+PARTY_LIST = 0x5145C
+PARTY_MAX = 4
 # Función del juego "EXP que falta para el siguiente nivel" (script "Selected Character"):
 # su código llama a la que da la EXP total de un nivel; de esa se lee la fórmula (expcurve.py).
 AOB_NEXT_LEVEL = '448B4304443BC07C??33C0488B5C2430'
@@ -118,6 +122,8 @@ class Plugin(GamePlugin):
         self._next_scan = 0.0
         self._scan_note = 'sin buscar'
         self._party_scan = None       # (formas pendientes, IDs, coincidencias)
+        self.records = {}             # ID -> dirección del registro
+        self._party_src = ''
         self._party_note = ''
         self._exp_note = self.curve_note
 
@@ -177,8 +183,10 @@ class Plugin(GamePlugin):
         took = time.monotonic() - t0
         if self.run:
             first, stride, n = self.run
+            self.records = roster.grid(mem, self.run, block, block + SCAN_SIZE)
             self._scan_note = (f'{len(found)} candidatos; serie de {n} cada 0x{stride:X} '
-                               f'desde bloque+0x{first - block:X} ({took:.1f} s)')
+                               f'desde bloque+0x{first - block:X}; {len(self.records)} en la rejilla '
+                               f'({took:.1f} s)')
         else:
             self._scan_note = f'ningún registro en bloque+0..0x{SCAN_SIZE:X} ({took:.1f} s)'
         return self.run
@@ -195,31 +203,56 @@ class Plugin(GamePlugin):
         nxt = self.curve.next(level, exp)
         return f'Nv {level} · Sig. {fmt(nxt)}' if nxt else f'Nv {level} · Máx.'
 
+    def _active_party(self, mem):
+        """IDs del grupo activo según la lista del juego, o None si no cuadra."""
+        try:
+            raw = struct.unpack('<8H', mem.read(self.block + PARTY_LIST, 16))
+        except MemoryReadError:
+            return None
+        ids = []
+        for cid in raw[:PARTY_MAX]:
+            if cid not in self.records or cid in ids:
+                break
+            ids.append(cid)
+        return ids if len(ids) >= 2 else None    # con ceros (lista vacía) solo saldría Estelle
+
     def _party(self, mem, values, run):
         first, stride, n = run
-        seen = []
-        for k in range(n):
-            rec = roster.read_record(mem, first + k * stride)
-            seen.append(rec)
-            slot = k + 1
-            if slot > 4:
-                continue
+        active = self._active_party(mem)
+        if active:
+            members = [self.records[cid] for cid in active]
+            self._party_src = f'lista del juego (bloque+0x{PARTY_LIST:X})'
+        else:
+            members = [first + k * stride for k in range(min(n, 4))]
+            self._party_src = 'sin lista del grupo: primeros registros encontrados'
+        for slot, addr in enumerate(members, 1):
+            rec = roster.read_record(mem, addr)
             values[f'p{slot}_name'] = NAMES.get(rec['id'], f'ID {rec["id"]}')
             values[f'p{slot}_img'] = self.portraits.url(rec['id'], PORTRAITS.get(rec['id'], ()))
             values[f'p{slot}_lv'] = self._level_text(rec)
             for key in ('hp', 'hp_max', 'ep', 'ep_max', 'cp', 'cp_max'):
                 values[f'p{slot}_{key}'] = rec[key]
-        listing = ', '.join(f'{NAMES.get(r["id"], r["id"])} Nv{r["level"]}' for r in seen[:16])
+        listing = ', '.join(f'{NAMES.get(cid, cid)}' for cid in sorted(self.records))
         values['dbg_roster'] = f'{self._scan_note}: {listing}'
         values['dbg_exp'] = self._exp_note
-        if self._party_scan is None:   # una vez por partida: personajes y candidatos a lista del grupo
-            print(f'[trails2] personajes: {self._scan_note}', flush=True)
-            for k, r in enumerate(seen):
-                print(f'[trails2]   #{k} bloque+0x{first + k * stride - self.block:X} ID {r["id"]} '
-                      f'{NAMES.get(r["id"], "?")} Nv {r["level"]} EXP {r["exp"]} '
-                      f'HP {r["hp"]}/{r["hp_max"]} EP {r["ep"]}/{r["ep_max"]} CP {r["cp"]}', flush=True)
-            self._party_scan = (list(party.LAYOUTS), set(NAMES) | {r['id'] for r in seen}, [])
-            self._party_note = 'buscando…'
+        if self._party_scan is None:   # una vez por partida: personajes (y lista del grupo si falta)
+            print(f'[trails2] personajes: {self._scan_note}; grupo: {self._party_src}', flush=True)
+            for cid, addr in sorted(self.records.items(), key=lambda kv: kv[1]):
+                r = roster.read_record(mem, addr)
+                print(f'[trails2]   bloque+0x{addr - self.block:X} ID {cid} {NAMES.get(cid, "?")} '
+                      f'Nv {r["level"]} EXP {r["exp"]} HP {r["hp"]}/{r["hp_max"]} '
+                      f'EP {r["ep"]}/{r["ep_max"]} CP {r["cp"]}/{r["cp_max"]}', flush=True)
+            for k in range(-6, n + 2):     # la rejilla en bruto: por qué un registro no pasa
+                a = first + k * stride
+                try:
+                    words = struct.unpack('<18I', mem.read(a, 0x48))
+                    print(f'[trails2]   rejilla bloque+0x{a - self.block:X}: '
+                          + ' '.join(f'{x:X}' for x in words), flush=True)
+                except (MemoryReadError, struct.error):
+                    pass
+            pending = [] if active else list(party.LAYOUTS)   # el diagnóstico solo si no hay lista
+            self._party_scan = (pending, set(NAMES) | set(self.records), [])
+            self._party_note = 'buscando…' if pending else self._party_src
         layouts, ids, hits = self._party_scan
         if layouts:                     # una forma de lista por lectura: ninguna se alarga
             hits += party.candidates(mem, self.block, SCAN_SIZE, ids, [layouts.pop(0)])

@@ -93,6 +93,33 @@ def find_roster(mem, start, size, known=()):
     return found, best_run(pool, ident.get, known)
 
 
+def loose(w, i):
+    """Comprobación mínima de un registro, para cuando ya se conoce la rejilla del array."""
+    return ((w[i] & 0xFFFF) <= 0x3FF and 1 <= w[i + 1] <= 200 and w[i + 2] <= 99_999_999
+            and 1 <= w[i + 4] <= 999_999)
+
+
+def grid(mem, run, lo, hi, span=40):
+    """{ID: dirección} de los registros en la rejilla de la serie (también los que no pasan
+    plausible(), p. ej. con algún campo fuera de lo esperado). La primera aparición gana."""
+    first, stride, n = run
+    out = {}
+    if not stride:
+        return {mem.u16(first): first}
+    for k in range(-span, n + span):
+        a = first + k * stride
+        if a < lo or a + RECORD.size > hi:
+            continue
+        try:
+            w = array.array('I')
+            w.frombytes(mem.read(a, RECORD.size))
+        except MemoryReadError:
+            continue
+        if loose(w, 0):
+            out.setdefault(w[0] & 0xFFFF, a)
+    return out
+
+
 def read_record(mem, addr):
     v = RECORD.unpack(mem.read(addr, RECORD.size))
     return {'id': v[0], 'level': v[2], 'exp': v[3], 'hp': v[4], 'hp_max': v[5],
