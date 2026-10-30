@@ -133,7 +133,7 @@ def test_el_plugin_es_valido_para_el_hub(tmp_path):
     from server import plugins as P
     from conftest import ROOT
     ids = {p.id: p for p in P.load_plugins(ROOT / 'plugins')}
-    assert ids['trails2'].version == '0.7.3'
+    assert ids['trails2'].version == '0.7.4'
 
 
 def test_un_array_de_numeros_parecidos_no_gana_al_grupo(attach):
@@ -439,3 +439,23 @@ def test_registra_los_cambios_de_personaje_en_memoria(attach, capsys):
     plugin.read(g.mem)
     out = capsys.readouterr().out
     assert 'cambio u32 bloque+0x300008: Zin -> Tita' in out and 'cambio u8 bloque+0x300008' in out
+
+
+def test_el_ruido_de_contadores_pequenos_no_se_registra(attach, capsys):
+    g = loaded()
+    for i, cid in enumerate((0, 2, 4, 3)):
+        g.mem.put('u16', g.block + 0x5145C + i * 2, cid)
+    plugin = attach(g)
+    plugin.read(g.mem)
+    g.mem.put('u32', g.block + 0x400000, 0x2CA)
+    plugin._next_diff = 0.0
+    plugin.read(g.mem)
+    g.mem.put('u32', g.block + 0x400000, 0x37F)               # contador: 02 -> 03 en su byte alto
+    g.mem.put('u16', g.block + 0x300000, 7)
+    plugin._next_diff = 0.0
+    plugin.read(g.mem)
+    g.mem.put('u16', g.block + 0x300000, 6)                   # Zin -> Tita, aunque Zin no estuviera en el grupo
+    plugin._next_diff = 0.0
+    plugin.read(g.mem)
+    out = capsys.readouterr().out
+    assert 'cambio u16 bloque+0x300000: Zin -> Tita' in out and 'Scherazard -> Olivier' not in out

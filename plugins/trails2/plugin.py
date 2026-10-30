@@ -351,6 +351,10 @@ class Plugin(GamePlugin):
         u8, u16 o u32, con los bytes de alrededor (para ver cómo guarda el juego el grupo)."""
         if self._swaps_logged >= 60:
             return
+        if not self._swaps_logged and not getattr(self, '_swap_header', False):
+            self._swap_header = True
+            print('[trails2] vigilando cambios de personaje; grupo actual: '
+                  + ', '.join(NAMES.get(c, str(c)) for c in ids), flush=True)
         x = (int.from_bytes(old, 'little') ^ int.from_bytes(new, 'little')).to_bytes(len(new), 'little')
         seen = set()
         for m in re.finditer(rb'[^\x00]', x):
@@ -361,7 +365,9 @@ class Plugin(GamePlugin):
                 seen.add((s, width))
                 was = struct.unpack_from(fmt, old, s)[0]
                 now_id = struct.unpack_from(fmt, new, s)[0]
-                if was in ids and now_id in NAMES and now_id not in ids:
+                # cualquier personaje por otro (el grupo que se cree tener puede estar desfasado);
+                # con un ID >= 6 para no confundirlo con contadores pequeños (p. ej. 2 -> 3)
+                if was != now_id and was in NAMES and now_id in NAMES and max(was, now_id) >= 6:
                     a, b = max(0, s - 16), min(len(new), s + 16)
                     print(f'[trails2] cambio u{width * 8} bloque+0x{pos + s:X}: {NAMES[was]} -> {NAMES[now_id]} | '
                           f'antes {old[a:b].hex(" ")} | ahora {new[a:b].hex(" ")} (desde +0x{pos + a:X})',
