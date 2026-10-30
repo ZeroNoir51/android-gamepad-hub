@@ -31,8 +31,15 @@ def _entry(mem, mgr, cid):
     desc = mem.ptr(t + 0x20) + idx * 0x50
     n, step = mem.u32(desc + 0x4C), mem.u32(desc + 0x48)
     start = (mem.ptr(t + 0x10) + mem.u64(desc + 0x44)) & MASK64
+    print(f'[trails2]   tabla de parámetros: T=0x{t:X} idx={idx} desc=0x{desc:X} n={n} paso=0x{step:X} '
+          f'ini=0x{mem.u64(desc + 0x44):X} base=0x{mem.ptr(t + 0x10):X} -> 0x{start:X}', flush=True)
     if not 0 < n <= MAX_ENTRIES:
         raise MemoryReadError(f'tabla de parámetros con {n} entradas')
+    try:
+        print('[trails2]   primeros IDs: ' + ' '.join(
+            str(mem.u16((start + (step * i & 0xFFFFFFFF)) & MASK64)) for i in range(min(n, 12))), flush=True)
+    except MemoryReadError as ex:
+        print(f'[trails2]   primeros IDs: {ex}', flush=True)
     for i in range(n):
         addr = (start + (step * i & 0xFFFFFFFF)) & MASK64
         if mem.u16(addr) == cid:

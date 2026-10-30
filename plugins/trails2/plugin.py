@@ -41,6 +41,8 @@ RESCAN_EVERY = 10.0
 # 1.03.1 con el diagnóstico "grupo?" y el grupo real del jugador. Se valida contra los registros.
 PARTY_LIST = 0x5145C
 PARTY_MAX = 4
+DIFF_EVERY = 2.0                 # s: comparación de memoria para ver dónde cambia el grupo
+DIFF_CHUNK = 64 << 10
 # Función del juego "EXP que falta para el siguiente nivel" (script "Selected Character"):
 # su código llama a la que da la EXP total de un nivel; de esa se lee la fórmula (expcurve.py).
 AOB_NEXT_LEVEL = '448B4304443BC07C??33C0488B5C2430'
@@ -132,6 +134,8 @@ class Plugin(GamePlugin):
         self._party_src = ''
         self._party_off = PARTY_LIST    # lista de la que se lee el grupo
         self._watch = {}                # copias de la lista del grupo: offset -> últimos 8 bytes
+        self._snap = {}                 # trozo del bloque -> bytes de la última comparación
+        self._next_diff = 0.0
         self._party_note = ''
         self._exp_note = self.curve_note
 
@@ -271,6 +275,8 @@ class Plugin(GamePlugin):
                         self._watch[off] = data[m.start():m.start() + 8]
             print('[trails2] copias de la lista del grupo: '
                   + ', '.join(f'bloque+0x{o:X}' for o in self._watch), flush=True)
+        if ids:
+            ids = self._diff_party(mem, ids) or ids
         for off, old in self._watch.items():
             try:
                 raw = mem.read(self.block + off, 8)
@@ -284,6 +290,49 @@ class Plugin(GamePlugin):
                     print(f'[trails2] grupo cambiado en bloque+0x{off:X}: '
                           + ', '.join(NAMES.get(c, str(c)) for c in new), flush=True)
         return ids
+
+    def _diff_party(self, mem, ids):
+        """Compara el bloque con el de hace DIFF_EVERY s: si un u16 que valía el ID de un
+        miembro pasa a ser el de otro personaje y forma una lista válida, esa es la lista
+        viva del grupo (la de +0x5145C solo cambia al cargar). Devuelve el grupo nuevo o None."""
+        now = time.monotonic()
+        if now < self._next_diff:
+            return None
+        self._next_diff = now + DIFF_EVERY
+        known = re.compile(b'|'.join(re.escape(struct.pack('<H', c)) for c in sorted(NAMES) if c), re.DOTALL)
+        adopted = None
+        for pos in range(0, SCAN_SIZE, DIFF_CHUNK):
+            try:
+                new = mem.read(self.block + pos, min(DIFF_CHUNK, SCAN_SIZE - pos))
+            except MemoryReadError:
+                continue
+            old = self._snap.get(pos)
+            self._snap[pos] = new
+            if old is None or old == new or adopted:
+                continue
+            for m in known.finditer(new):
+                i = m.start()
+                if i % 2 or i + 2 > len(old):
+                    continue
+                was, now_id = struct.unpack_from('<H', old, i)[0], struct.unpack_from('<H', new, i)[0]
+                if was == now_id or was not in ids:
+                    continue
+                for back in range(0, 8, 2):            # la lista puede empezar hasta 3 huecos antes
+                    s = i - back
+                    if s < 0 or s + 8 > len(new):
+                        continue
+                    cand = self._parse_party(new[s:s + 8])
+                    if cand and now_id in cand and len(cand) >= len(ids):
+                        off = pos + s
+                        self._party_off = off
+                        self._watch[off] = new[s:s + 8]
+                        adopted = cand
+                        print(f'[trails2] grupo cambiado ({NAMES.get(was, was)} -> {NAMES.get(now_id, now_id)}) '
+                              f'en bloque+0x{off:X}: ' + ', '.join(NAMES.get(c, str(c)) for c in cand), flush=True)
+                        break
+                if adopted:
+                    break
+        return adopted
 
     def _record_of(self, mem, ids):
         """{ID: dirección} para esos personajes: de la serie o, si no están, buscándolos por ID
@@ -366,7 +415,7 @@ class Plugin(GamePlugin):
         if block != self.block:
             self.block, self.run, self._next_scan, self._party_scan = block, None, 0.0, None
             self._by_id, self._next_id_scan = {}, 0.0
-            self._party_off, self._watch = PARTY_LIST, {}
+            self._party_off, self._watch, self._snap = PARTY_LIST, {}, {}
         *sepith, mira, _, played = MONEY.unpack(mem.read(block + self.play_off - 0x28, MONEY.size))
         if not (math.isfinite(played) and 0 <= played < 1e8) or mira > 999_999_999:
             values['status'] = 'Los datos no cuadran: ¿versión distinta del juego?'

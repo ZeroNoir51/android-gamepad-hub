@@ -133,7 +133,7 @@ def test_el_plugin_es_valido_para_el_hub(tmp_path):
     from server import plugins as P
     from conftest import ROOT
     ids = {p.id: p for p in P.load_plugins(ROOT / 'plugins')}
-    assert ids['trails2'].version == '0.6.0'
+    assert ids['trails2'].version == '0.7.0'
 
 
 def test_un_array_de_numeros_parecidos_no_gana_al_grupo(attach):
@@ -377,3 +377,22 @@ def test_el_grupo_cambia_sin_recargar(attach, capsys):
     out = capsys.readouterr().out
     assert 'copias de la lista del grupo: bloque+0x5145C, bloque+0x12A9E4' in out
     assert 'grupo cambiado en bloque+0x12A9E4: Estelle, Zin, Kloe, Olivier' in out
+
+
+def test_el_grupo_cambia_en_una_lista_que_no_era_copia(attach, capsys):
+    # La lista viva no coincide al principio con la del grupo (otro orden o formato): se
+    # descubre al ver que un miembro cambia por otro personaje.
+    g = loaded()
+    for i, cid in enumerate((0, 2, 4, 3)):
+        g.mem.put('u16', g.block + 0x5145C + i * 2, cid)
+    for i, cid in enumerate((3, 0, 2, 4)):                    # lista viva, en otro orden
+        g.mem.put('u16', g.block + 0x200000 + i * 2, cid)
+    plugin = attach(g)
+    assert plugin.read(g.mem)['p2_name'] == 'Scherazard'
+    g.mem.put('u16', g.block + 0x200000 + 4, 6)               # Tita entra por Scherazard
+    plugin._next_diff = 0.0
+    v = plugin.read(g.mem)
+    assert [v[f'p{n}_name'] for n in range(1, 5)] == ['Olivier', 'Estelle', 'Tita', 'Kloe']
+    assert 'grupo cambiado (Scherazard -> Tita) en bloque+0x200000' in capsys.readouterr().out
+    plugin._next_diff = 0.0
+    assert plugin.read(g.mem)['p3_name'] == 'Tita'             # y se sigue leyendo de ahí
