@@ -147,7 +147,7 @@ def by_id(mem, start, size, ids, fits, limit=8):
             v = RECORD.unpack_from(data, i)
             cid, level, exp, hp, hp_max, ep, ep_max, cp, cp_max = v[0], *v[2:10]
             if (1 <= level <= 200 and 1 <= hp_max <= 999_999 and hp <= hp_max and ep <= ep_max <= 99_999
-                    and cp <= cp_max <= 300 and fits(level, exp)):
+                    and cp <= cp_max and 100 <= cp_max <= 300 and fits(level, exp)):   # CP máx.: 200
                 found = out.setdefault(cid, [])
                 if len(found) < limit:
                     found.append(start + pos + i)

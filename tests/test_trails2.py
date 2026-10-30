@@ -133,7 +133,7 @@ def test_el_plugin_es_valido_para_el_hub(tmp_path):
     from server import plugins as P
     from conftest import ROOT
     ids = {p.id: p for p in P.load_plugins(ROOT / 'plugins')}
-    assert ids['trails2'].version == '0.7.6'
+    assert ids['trails2'].version == '0.7.7'
 
 
 def test_un_array_de_numeros_parecidos_no_gana_al_grupo(attach):
@@ -462,3 +462,25 @@ def test_el_ruido_de_contadores_pequenos_no_se_registra(attach, capsys):
     plugin.read(g.mem)
     out = capsys.readouterr().out
     assert 'cambio u16 bloque+0x300000: Zin -> Tita' in out and 'Scherazard -> Olivier' not in out
+
+
+def test_una_lista_con_un_personaje_sin_ficha_no_se_adopta(attach, capsys):
+    # Como en la 1.03.1: Joshua (ID 1) tiene la ficha vacía; una lista ajena que cambia a
+    # Joshua no es el grupo
+    g = FakeTrails()
+    g.money(1, SEPITH, 10.0)
+    for i, cid in enumerate((0, 2, 4, 3, 7)):
+        g.character(i, cid, 46, 230_000, 3000, 3100, 500, 520, 100)
+    g.party_list([0, 2, 4, 3])
+    for i, cid in enumerate((0, 2, 4, 3)):
+        g.mem.put('u16', g.block + 0x200000 + i * 2, cid)
+    plugin = attach(g)
+    plugin.read(g.mem)
+    g.mem.put('u16', g.block + 0x200000 + 2, 1)                # Scherazard -> Joshua (sin ficha)
+    plugin._next_diff = 0.0
+    v = plugin.read(g.mem)
+    assert [v[f'p{n}_name'] for n in range(1, 5)] == ['Estelle', 'Scherazard', 'Kloe', 'Olivier']
+    assert 'lista descartada' in capsys.readouterr().out
+    g.mem.put('u16', g.block + 0x200000 + 2, 7)                # Scherazard -> Zin (con ficha): sí
+    plugin._next_diff = 0.0
+    assert plugin.read(g.mem)['p2_name'] == 'Zin'

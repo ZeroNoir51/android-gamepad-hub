@@ -289,6 +289,10 @@ class Plugin(GamePlugin):
             if raw != old:
                 self._watch[off] = raw
                 new = self._parse_party(raw)
+                if new and not self._all_have_records(mem, new):
+                    print('[trails2] copia descartada (algún miembro sin ficha válida): '
+                          + ', '.join(NAMES.get(c, str(c)) for c in new), flush=True)
+                    new = None
                 if new:
                     self._party_off, ids = off, new
                     print(f'[trails2] grupo cambiado en bloque+0x{off:X}: '
@@ -337,6 +341,10 @@ class Plugin(GamePlugin):
                         score = (len(set(cand) & set(ids)), len(cand), back)
                         if score[0] >= 2 and (best is None or score > best[0]):
                             best = (score, s, cand)
+                if best and not self._all_have_records(mem, best[2]):
+                    print('[trails2] lista descartada (algún miembro sin ficha válida): '
+                          + ', '.join(NAMES.get(c, str(c)) for c in best[2]), flush=True)
+                    best = None
                 if best:
                     _, s, cand = best
                     off = pos + s
@@ -348,6 +356,31 @@ class Plugin(GamePlugin):
                 if adopted:
                     break
         return adopted
+
+    def _nearest(self, addrs):
+        """De varias fichas posibles, la más cercana a la serie de fichas (las reales están juntas;
+        una coincidencia casual en otra zona, no)."""
+        anchor = self.run[0] if self.run else self.block
+        return min(addrs, key=lambda a: abs(a - anchor))
+
+    def _all_have_records(self, mem, ids):
+        """¿Tienen todos una ficha de personaje válida? (Joshua, p. ej., tiene la suya vacía
+        en esta parte del juego; listas ajenas que lo incluyen no son el grupo)."""
+        missing = [c for c in ids if c not in self.records and not self._by_id.get(c)]
+        if missing:
+            fits = self.curve.near if self.curve else (lambda level, exp: True)
+            self._by_id.update(roster.by_id(mem, self.block, SCAN_SIZE, missing, fits))
+        for c in ids:
+            addr = self.records.get(c) or (self._nearest(self._by_id[c]) if self._by_id.get(c) else None)
+            if addr is None:
+                return False
+            try:
+                rec = roster.read_record(mem, addr)
+            except MemoryReadError:
+                return False
+            if rec['id'] != c or not 1 <= rec['level'] <= 200 or not rec['hp_max']:
+                return False
+        return True
 
     def _log_swaps(self, pos, old, new, ids):
         """Diagnóstico: cada sitio donde un miembro del grupo pasa a ser otro personaje, como
@@ -383,7 +416,7 @@ class Plugin(GamePlugin):
         """{ID: dirección} para esos personajes: de la serie o, si no están, buscándolos por ID
         en todo el bloque (con la EXP validada por la fórmula). Las búsquedas se espacian."""
         found = {cid: self.records[cid] for cid in ids if cid in self.records}
-        found.update({cid: self._by_id[cid][0] for cid in ids if cid in self._by_id and cid not in found})
+        found.update({cid: self._nearest(self._by_id[cid]) for cid in ids if self._by_id.get(cid) and cid not in found})
         missing = [cid for cid in ids if cid not in found]
         now = time.monotonic()
         if missing and now >= self._next_id_scan:
@@ -395,7 +428,7 @@ class Plugin(GamePlugin):
                 where = ', '.join(f'bloque+0x{a - self.block:X}' for a in hits.get(cid, [])) or 'no encontrado'
                 print(f'[trails2] registro de {NAMES.get(cid, cid)} por ID: {where}', flush=True)
                 if hits.get(cid):
-                    found[cid] = hits[cid][0]
+                    found[cid] = self._nearest(hits[cid])
         return found
 
     def _party(self, mem, values, run):
