@@ -133,7 +133,7 @@ def test_el_plugin_es_valido_para_el_hub(tmp_path):
     from server import plugins as P
     from conftest import ROOT
     ids = {p.id: p for p in P.load_plugins(ROOT / 'plugins')}
-    assert ids['trails2'].version == '0.5.0'
+    assert ids['trails2'].version == '0.6.0'
 
 
 def test_un_array_de_numeros_parecidos_no_gana_al_grupo(attach):
@@ -311,3 +311,69 @@ def test_grupo_con_registros_fuera_de_la_serie(attach, capsys):
     out = capsys.readouterr().out
     assert 'registro de Estelle por ID: bloque+0x300000' in out
     assert 'grupo? ' not in out                                # la lista ya cuadra: sin diagnóstico
+
+
+def with_char_params(g, total, params):
+    """Estructuras del juego para la búsqueda de parámetros por personaje (ver charparams.py).
+    params: {ID: (nombre interno, multiplicador, tope 175?)}"""
+    import struct
+    import zlib
+    heap = 0x30000000
+    g.mem.map(heap, 0x10000)
+    put = g.mem.put
+    slot = BASE + 0x50000 + 0x200                              # [exe+global] -> gestor de datos
+    mov = total + TOTAL.find(b'\x48\x8b\x35')                # mov rsi,[rip+disp]
+    g.mem.write(mov + 3, struct.pack('<i', slot - (mov + 7)))
+    mgr, a, t, desc, a2, t2, head = (heap + o for o in (0x0, 0x100, 0x200, 0x300, 0x400, 0x500, 0x600))
+    put('u64', slot, mgr)
+    put('u64', mgr + 0x10, a), put('u64', a + 8, t)
+    put('i32', t + 0x28, 1)                                    # idx 1: desc + 0x50
+    put('u64', t + 0x20, desc - 0x50)
+    entries, step = heap + 0x1000, 0x60
+    put('u32', desc + 0x44, 0x10), put('u32', desc + 0x48, step), put('u32', desc + 0x4C, len(params))
+    qword = 0x10 | step << 32                                  # u64 en +0x44 (incluye el paso, como en el juego)
+    put('u64', t + 0x10, (entries - qword) & ((1 << 64) - 1))
+    put('u64', mgr + 0x28, a2), put('u64', a2 + 8, t2), put('u64', t2 + 0x38, head)
+    prev = head
+    for i, (cid, (name, mult, cap175)) in enumerate(params.items()):
+        e, text, node, p = entries + i * step, heap + 0x3000 + i * 0x40, heap + 0x4000 + i * 0x40, heap + 0x6000 + i * 0x100
+        put('u16', e, cid), put('u64', e + 0x40, text)
+        g.mem.write(text, name.encode() + b'\0')
+        put('u64', prev, node)                                 # siguiente
+        put('u32', node + 0x10, zlib.crc32(name.encode())), put('u64', node + 0x18, p)
+        put('u8', p + 0x10, 1 if cap175 else 0), put('f32', p + 0xE8, mult)
+        prev = node
+    put('u64', prev, head)
+
+
+def test_siguiente_nivel_con_multiplicador_propio(attach, capsys):
+    # Zin (invitado): EXP 230.300 en el nivel 47 = umbral × 0,98. Con su multiplicador del
+    # juego, "Sig." = total(48) × 0,98 - 230.300 = 239.904 - 230.300 = 9.604.
+    g = FakeTrails()
+    g.money(1, SEPITH, 10.0)
+    total = with_exp_code(g)
+    with_char_params(g, total, {7: ('zin', 0.98, False), 3: ('olivier', 1.0, False)})
+    for i, (cid, lv, exp) in enumerate([(0, 46, 230_000), (7, 47, 230_300), (4, 45, 220_000), (3, 46, 233_284)]):
+        g.character(i, cid, lv, exp, 3000, 3100, 500, 520, 100)
+    for i, cid in enumerate((0, 7, 4, 3)):
+        g.mem.put('u16', g.block + 0x5145C + i * 2, cid)
+    v = attach(g).read(g.mem)
+    assert v['p2_name'] == 'Zin' and v['p2_lv'] == 'Nv 47 · Sig. 9.604'
+    assert v['p4_lv'] == 'Nv 46 · Sig. 1.716'
+    assert 'parámetros de Zin: zin crc' in capsys.readouterr().out
+
+
+def test_el_grupo_cambia_sin_recargar(attach, capsys):
+    # La lista de +0x5145C solo se actualiza al cargar; otra copia cambia al momento
+    g = loaded()
+    for off in (0x5145C, 0x12A9E4):
+        for i, cid in enumerate((0, 2, 4, 3)):
+            g.mem.put('u16', g.block + off + i * 2, cid)
+    plugin = attach(g)
+    assert plugin.read(g.mem)['p2_name'] == 'Scherazard'
+    g.mem.put('u16', g.block + 0x12A9E4 + 2, 7)               # Zin entra por Scherazard
+    v = plugin.read(g.mem)
+    assert [v[f'p{n}_name'] for n in range(1, 5)] == ['Estelle', 'Zin', 'Kloe', 'Olivier']
+    out = capsys.readouterr().out
+    assert 'copias de la lista del grupo: bloque+0x5145C, bloque+0x12A9E4' in out
+    assert 'grupo cambiado en bloque+0x12A9E4: Estelle, Zin, Kloe, Olivier' in out

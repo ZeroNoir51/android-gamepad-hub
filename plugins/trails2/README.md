@@ -22,7 +22,8 @@ No usa direcciones fijas: si la versión del juego no coincide, lo dice (*Estado
 
 - Verificado (1.03.1): Mira, tiempo de juego, nivel y EXP.
 - **Grupo activo**: lista de miembros en el bloque (+0x5145C en la 1.03.1, u16 en orden; los 4 primeros van en el grupo). Los registros de esos personajes se toman de la serie o, si no están en ella (en la 1.03.1, Estelle, Scherazard y Kloe están en otra zona), se buscan por ID en el bloque con la EXP validada por la fórmula. Si no cuadra, se muestran los primeros registros y *Diag. grupo* busca la lista.
-- **Siguiente nivel**: con la fórmula del propio juego (`expcurve.py`): EXP total del nivel N = 100·N·(N+3) × multiplicador; las constantes se leen de su código. Si la EXP de un personaje no cuadra (multiplicador propio), solo se muestra el nivel y *Diag. EXP* lo dice. Por confirmar contra el valor del menú.
+- **Siguiente nivel** (verificado: Olivier 1.716 como en el menú): fórmula del propio juego (`expcurve.py`): EXP total del nivel N = 100·N·(N+3) × multiplicador; las constantes se leen de su código. Los personajes con multiplicador o tope propios (invitados como Zin, × 0,98) los leen de los datos del juego como hace él (`charparams.py`); si no cuadra, solo se muestra el nivel y *Diag. EXP* lo dice.
+- **Cambios de grupo sin recargar**: la lista de +0x5145C se actualiza al cargar; se vigilan las demás copias de la lista y se usa la que cambia al cambiar el grupo en el menú.
 - Los nombres de los IDs 0-7 (orden habitual de la saga). Los invitados (Kurt, Anelace, Josette, Schwarz, Vander, Kevin, Dorothy) vienen de la tabla.
 
 Si algo no cuadra, activa *Debug* y comparte los campos *Diag.* y `launcher.log`.

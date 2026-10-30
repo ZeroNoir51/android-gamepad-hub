@@ -21,12 +21,13 @@ miembros forman el grupo (se muestran los 4 primeros del array). Los diagnóstic
 (Debug) dicen qué se encontró.
 """
 import math
+import re
 import struct
 import time
 
 from server.plugin_api import Field, GamePlugin, MemoryReadError, PortraitFinder, pe_info
 
-from . import expcurve, party, roster
+from . import charparams, expcurve, party, roster
 from .scan import SignatureError, find_one, rip_target
 
 MODULE = 'sora_2nd.exe'
@@ -115,6 +116,7 @@ class Plugin(GamePlugin):
                 self.play_off, self.play_src = add, 'leído de la firma'
         except SignatureError:
             pass
+        self.mgr_slot = None          # gestor de datos del juego (lo pone _exp_curve)
         self.curve, self.curve_note = self._exp_curve(mem)
         self.portraits = PortraitFinder(self.id)
         self.block = None
@@ -126,7 +128,10 @@ class Plugin(GamePlugin):
         self._by_id = {}              # ID -> [direcciones] buscadas por ID (fuera de la serie)
         self._next_id_scan = 0.0
         self._lookups_dumped = False
+        self._char_curves = {}        # ID -> Curve propia (multiplicador/tope) o None
         self._party_src = ''
+        self._party_off = PARTY_LIST    # lista de la que se lee el grupo
+        self._watch = {}                # copias de la lista del grupo: offset -> últimos 8 bytes
         self._party_note = ''
         self._exp_note = self.curve_note
 
@@ -143,6 +148,8 @@ class Plugin(GamePlugin):
                     f'(exe+0x{func - self.base:X})')
             print(f'[trails2] {note}', flush=True)
             self.exp_func = func
+            g = mem.read(func, expcurve.FUNC_SIZE).find(b'\x48\x8B\x35')   # mov rsi,[rip+disp]
+            self.mgr_slot = rip_target(mem, func + g, 3, 7) if g >= 0 else None
             return curve, note
         except (SignatureError, MemoryReadError) as ex:
             print(f'[trails2] sin "siguiente nivel": {ex}', flush=True)
@@ -194,30 +201,89 @@ class Plugin(GamePlugin):
             self._scan_note = f'ningún registro en bloque+0..0x{SCAN_SIZE:X} ({took:.1f} s)'
         return self.run
 
-    def _level_text(self, rec):
+    def _char_curve(self, mem, rec):
+        """Curva con el multiplicador/tope propios del personaje (los del juego), o None."""
+        cid = rec['id']
+        if cid in self._char_curves:
+            return self._char_curves[cid]
+        name, found = NAMES.get(cid, cid), None
+        try:
+            options = charparams.candidates(mem, mem.ptr(self.mgr_slot), cid) if self.mgr_slot else []
+        except MemoryReadError as ex:
+            options = []
+            print(f'[trails2] parámetros de {name}: {ex}', flush=True)
+        for desc, mult, cap in options:
+            curve = expcurve.Curve(self.curve.add, self.curve.mul, mult, cap)
+            ok = curve.consistent(rec['level'], rec['exp'])
+            print(f'[trails2] parámetros de {name}: {desc}: × {mult:g}, tope {cap}'
+                  f'{" (cuadra)" if ok else ""}', flush=True)
+            if ok and found is None:
+                found = curve
+        if not options:
+            print(f'[trails2] parámetros de {name}: no encontrados', flush=True)
+        self._char_curves[cid] = found
+        return found
+
+    def _level_text(self, rec, mem=None):
         level, exp = rec['level'], rec['exp']
         if not self.curve:
             return f'Nv {level}'
-        if not self.curve.consistent(level, exp):
-            # p. ej. un multiplicador propio del personaje: mejor no mostrar un número falso
-            self._exp_note = (f'{self.curve_note}; no cuadra con {NAMES.get(rec["id"], rec["id"])} '
-                              f'(Nv {level}, {fmt(exp)} EXP)')
-            return f'Nv {level}'
-        nxt = self.curve.next(level, exp)
+        curve = self.curve
+        if not curve.consistent(level, exp):
+            # multiplicador propio del personaje (p. ej. 0,98 de los invitados): se lee del juego
+            curve = self._char_curve(mem, rec) if mem is not None else None
+            if curve is None:
+                self._exp_note = (f'{self.curve_note}; no cuadra con {NAMES.get(rec["id"], rec["id"])} '
+                                  f'(Nv {level}, {fmt(exp)} EXP)')
+                return f'Nv {level}'
+        nxt = curve.next(level, exp)
         return f'Nv {level} · Sig. {fmt(nxt)}' if nxt else f'Nv {level} · Máx.'
 
-    def _active_party(self, mem):
-        """IDs del grupo activo según la lista del juego, o None si no cuadra."""
-        try:
-            raw = struct.unpack('<8H', mem.read(self.block + PARTY_LIST, 16))
-        except MemoryReadError:
-            return None
+    @staticmethod
+    def _parse_party(raw):
         ids = []
-        for cid in raw[:PARTY_MAX]:
+        for cid in struct.unpack('<4H', raw):
             if cid not in NAMES or cid in ids:
                 break
             ids.append(cid)
         return ids if len(ids) >= 2 else None    # con ceros (lista vacía) solo saldría Estelle
+
+    def _active_party(self, mem):
+        """IDs del grupo activo, o None si no cuadra.
+
+        La lista de +0x5145C se actualiza al cargar la partida; el juego guarda otras copias y
+        alguna cambia en cuanto se cambia el grupo en el menú. Se vigilan todas las copias del
+        grupo actual y se usa la última que cambió a una lista válida."""
+        try:
+            ids = self._parse_party(mem.read(self.block + self._party_off, 8))
+        except MemoryReadError:
+            return None
+        if ids and not self._watch:
+            pattern = re.escape(struct.pack(f'<{len(ids)}H', *ids))
+            for pos in range(0, SCAN_SIZE, 1 << 20):
+                try:
+                    data = mem.read(self.block + pos, min((1 << 20) + 8, SCAN_SIZE - pos))
+                except MemoryReadError:
+                    continue
+                for m in re.finditer(pattern, data, re.DOTALL):
+                    if m.start() % 2 == 0 and m.start() < 1 << 20 and len(self._watch) < 16:
+                        off = pos + m.start()
+                        self._watch[off] = data[m.start():m.start() + 8]
+            print('[trails2] copias de la lista del grupo: '
+                  + ', '.join(f'bloque+0x{o:X}' for o in self._watch), flush=True)
+        for off, old in self._watch.items():
+            try:
+                raw = mem.read(self.block + off, 8)
+            except MemoryReadError:
+                continue
+            if raw != old:
+                self._watch[off] = raw
+                new = self._parse_party(raw)
+                if new:
+                    self._party_off, ids = off, new
+                    print(f'[trails2] grupo cambiado en bloque+0x{off:X}: '
+                          + ', '.join(NAMES.get(c, str(c)) for c in new), flush=True)
+        return ids
 
     def _record_of(self, mem, ids):
         """{ID: dirección} para esos personajes: de la serie o, si no están, buscándolos por ID
@@ -244,7 +310,7 @@ class Plugin(GamePlugin):
         addrs = self._record_of(mem, active) if active else {}
         if active and len(addrs) >= 2:
             members = [addrs[cid] for cid in active if cid in addrs]
-            self._party_src = f'lista del juego (bloque+0x{PARTY_LIST:X})'
+            self._party_src = f'lista del juego (bloque+0x{self._party_off:X})'
         else:
             active = None
             members = [first + k * stride for k in range(min(n, 4))]
@@ -253,7 +319,7 @@ class Plugin(GamePlugin):
             rec = roster.read_record(mem, addr)
             values[f'p{slot}_name'] = NAMES.get(rec['id'], f'ID {rec["id"]}')
             values[f'p{slot}_img'] = self.portraits.url(rec['id'], PORTRAITS.get(rec['id'], ()))
-            values[f'p{slot}_lv'] = self._level_text(rec)
+            values[f'p{slot}_lv'] = self._level_text(rec, mem)
             for key in ('hp', 'hp_max', 'ep', 'ep_max', 'cp', 'cp_max'):
                 values[f'p{slot}_{key}'] = rec[key]
         listing = ', '.join(f'{NAMES.get(cid, cid)}' for cid in sorted(self.records))
@@ -300,6 +366,7 @@ class Plugin(GamePlugin):
         if block != self.block:
             self.block, self.run, self._next_scan, self._party_scan = block, None, 0.0, None
             self._by_id, self._next_id_scan = {}, 0.0
+            self._party_off, self._watch = PARTY_LIST, {}
         *sepith, mira, _, played = MONEY.unpack(mem.read(block + self.play_off - 0x28, MONEY.size))
         if not (math.isfinite(played) and 0 <= played < 1e8) or mira > 999_999_999:
             values['status'] = 'Los datos no cuadran: ¿versión distinta del juego?'
