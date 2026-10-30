@@ -133,6 +133,11 @@ body.tel-hidden:not(.nogame) .guide span{display:none}
   body.tel-right .sys{border-left:0;border-top:1px solid var(--line)}
 }
 
+/* aviso del mando virtual del PC (sin /dev/uinput) */
+.padwarn{position:fixed;left:50%;top:50px;transform:translateX(-50%);z-index:4;max-width:calc(100% - 32px);
+  background:var(--panel);border:1px solid var(--amber);color:var(--amber);border-radius:8px;padding:6px 12px;font-size:13px}
+.padwarn.ok{border-color:var(--ok);color:var(--ok)}
+
 /* ajustes */
 .settings{position:fixed;inset:0;background:rgba(10,11,14,.82);z-index:6;display:flex;align-items:center;justify-content:center;padding:16px}
 .settings[hidden]{display:none}
@@ -206,6 +211,7 @@ body.locked .login{display:flex}
   <button class="tbtn" id="touchBtn">Táctil</button>
 </header>
 
+<div class="padwarn" id="padwarn" role="status" hidden></div>
 <main class="main">
   <section class="sys" aria-label="Rendimiento">
     <div class="guiderow">
@@ -392,13 +398,23 @@ function connect() {
 
 function onMessage(m) {
   switch (m.t) {
-    case 'hello': host = m.host; setConn(`${esc(m.host)} <small>v${esc(m.v)}</small>`, true); break;
+    case 'hello': host = m.host; setConn(`${esc(m.host)} <small>v${esc(m.v)}</small>`, true); setPadWarn(m.padErr, false); break;
+    case 'pad': setPadWarn(m.err, true); break;
     case 'pong': onPong(m); break;
     case 'tel': onTelemetry(m); break;
     case 'game': onGameMeta(m); break;
     case 'gv': onGameValues(m); break;
     case 'err': console.warn('servidor:', m.msg); break;
   }
+}
+/* el PC no pudo crear el mando virtual: se avisa mientras dure (el servicio lo reintenta) */
+function setPadWarn(err, changed) {
+  const w = $('#padwarn');
+  clearTimeout(w._h);
+  w.classList.toggle('ok', !err);
+  if (err) { w.textContent = `El PC no tiene mando virtual: ${err}. Se reintenta solo.`; w.hidden = false; }
+  else if (changed) { w.textContent = 'Mando virtual listo en el PC.'; w.hidden = false; w._h = setTimeout(() => { w.hidden = true; }, 4000); }
+  else w.hidden = true;
 }
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 

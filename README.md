@@ -119,6 +119,8 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 
 Cierra sesión y vuelve a entrar. Se usa un grupo propio porque el grupo `input` también permite leer teclado y ratón.
 
+Mientras falte el permiso, el servicio **arranca igual sin mando virtual** (web, telemetría y datos del juego funcionan), avisa en el log y en Android, y reintenta crear el mando cada 10 s: en cuanto el permiso aparece, el mando funciona sin reiniciar nada. Con `gamepad serve --pad uinput` el mando es obligatorio (falla sin él).
+
 ### Firewall
 
 Si el dispositivo Android no llega al PC ("Address Unreachable" o "Connection refused"), abre el puerto 8888 **solo para tu red local**. Con firewalld (Fedora y derivadas), ajustando la zona (`sudo firewall-cmd --get-active-zones`) y el rango de tu red:

@@ -72,10 +72,36 @@ def test_cierre(dev):
     p.close()                                                   # idempotente
 
 
-def test_sin_permiso_cae_a_null(monkeypatch):
+def test_sin_permiso_sigue_y_reintenta(monkeypatch, capsys):
+    calls = {'n': 0}
+    real_open = lambda path, flags: 99
+
     def denied(path, flags):
+        calls['n'] += 1
         raise PermissionError(13, 'Permission denied', path)
     monkeypatch.setattr(pad.os, 'open', denied)
-    assert isinstance(pad.create_pad('auto'), pad.NullPad)
+    monkeypatch.setattr(pad.fcntl, 'ioctl', lambda fd, req, arg=0: None)
+    monkeypatch.setattr(pad.os, 'write', lambda fd, data: len(data))
+    p = pad.create_pad('auto')
+    assert isinstance(p, pad.RetryPad) and p.name == 'sin mando virtual'
+    assert 'sin permiso para /dev/uinput' in p.error
+    assert 'reintenta cada 10 s' in capsys.readouterr().out
+    p.apply(protocol.neutral() | {'a': 1})                 # sin mando: se guarda el estado
+    assert not p.retry(now=0)                               # aún no toca
+    assert not p.retry(now=1e9) and p.inner is None         # sigue sin permiso
+    monkeypatch.setattr(pad.os, 'open', real_open)          # el permiso aparece (p. ej. regla udev)
+    assert not p.retry(now=1e9 + 1)                         # respeta el intervalo
+    assert p.retry(now=1e9 + 20)
+    assert p.error is None and p.name == 'GamePad Virtual Xbox 360'
+    assert p.inner.state['a'] == 1                          # recupera lo que se estaba pulsando
     with pytest.raises(PermissionError):
-        pad.create_pad('uinput')
+        monkeypatch.setattr(pad.os, 'open', denied)
+        pad.create_pad('uinput')                            # obligatorio: falla
+
+
+def test_sin_modulo_uinput(monkeypatch):
+    def missing(path, flags):
+        raise FileNotFoundError(2, 'No such file', path)
+    monkeypatch.setattr(pad.os, 'open', missing)
+    assert 'modprobe uinput' in pad.create_pad('auto').error
+    assert isinstance(pad.create_pad('null'), pad.NullPad)

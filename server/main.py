@@ -50,8 +50,9 @@ def parse_args(argv=None):
     p.add_argument('--host', default='0.0.0.0')
     p.add_argument('--port', type=int, default=status.PORT)
     p.add_argument('--token', help='4 letras A-Z (si no, el código guardado; ver `gamepad code`)')
-    p.add_argument('--pad', choices=('auto', 'uinput', 'null'), default='uinput',
-                   help='null = sin mando virtual (probar telemetría)')
+    p.add_argument('--pad', choices=('auto', 'uinput', 'null'), default='auto',
+                   help='auto: si no hay /dev/uinput, sigue sin mando y lo reintenta; '
+                        'uinput: obligatorio (falla sin él); null: sin mando virtual (pruebas)')
     p.add_argument('--telemetry-hz', type=float, default=4.0)
     p.add_argument('--mangohud-dir', default=None,
                    help='carpeta de logs de MangoHud (por defecto la misma que usa `gamepad run`)')
@@ -184,7 +185,7 @@ def main(argv=None):
         hub.ws = ws
         hub.last_input = time.monotonic()
         print(f'[ws] {ip}: cliente conectado', flush=True)
-        await hub.send({'t': 'hello', 'v': VERSION, 'host': platform.node(), 'pad': pad.name})
+        await hub.send({'t': 'hello', 'v': VERSION, 'host': platform.node(), 'pad': pad.name, 'padErr': pad.error})
         await hub.send(game['meta'])
         try:
             async for msg in ws:
@@ -199,6 +200,15 @@ def main(argv=None):
         return ws
 
     # --- bucles ---
+    async def pad_retry():
+        """Sin /dev/uinput al arrancar: reintenta y avisa a Android cuando el mando ya existe."""
+        while hasattr(pad, 'retry'):
+            await asyncio.sleep(2)
+            if pad.retry():
+                print(f'[pad] mando virtual creado: {pad.name}', flush=True)
+                await hub.send({'t': 'pad', 'name': pad.name, 'err': None})
+                return
+
     async def input_watchdog():
         while True:
             await asyncio.sleep(0.1)
@@ -256,7 +266,7 @@ def main(argv=None):
             sock.unlink(missing_ok=True)
 
     async def lifetime(app):
-        tasks = [asyncio.create_task(c()) for c in (input_watchdog, telemetry_loop, bridge_server)]
+        tasks = [asyncio.create_task(c()) for c in (input_watchdog, telemetry_loop, bridge_server, pad_retry)]
         status.notify(f'GamePad {VERSION} listo', f'Android: {status.url(args.port)}\nCódigo: {token}')
         try:
             yield

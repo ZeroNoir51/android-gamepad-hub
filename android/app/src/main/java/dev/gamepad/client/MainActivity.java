@@ -77,7 +77,7 @@ public final class MainActivity extends Activity {
     // vistas
     private View loginView, hudView;
     private EditText hostEdit, codeEdit;
-    private TextView loginError, conn, rtt, fps, ft, mh, foot;
+    private TextView loginError, conn, rtt, fps, ft, mh, foot, padWarn;
     private TextView cpuLoad, cpuTemp, mem, gpuLoad, gpuTemp, jitter;
     private View dot;
     private Button debugBtn, guideBtn;
@@ -283,6 +283,10 @@ public final class MainActivity extends Activity {
         switch (m.optString("t")) {
             case "hello":
                 Ui.set(conn, m.optString("host") + "  v" + m.optString("v"));
+                setPadWarn(m.isNull("padErr") ? null : m.optString("padErr", null), false);
+                break;
+            case "pad":
+                setPadWarn(m.isNull("err") ? null : m.optString("err", null), true);
                 break;
             case "pong": {
                 long sent = m.optLong("ct", -1);
@@ -619,6 +623,12 @@ public final class MainActivity extends Activity {
         top.addView(server, lp);
         root.addView(top);
         root.addView(divider());
+        // aviso: el PC no pudo crear el mando virtual (sin /dev/uinput); el servicio lo reintenta
+        padWarn = Ui.text(this, 13, Ui.AMBER);
+        padWarn.setPadding(px, Ui.dp(this, 6), px, Ui.dp(this, 6));
+        padWarn.setBackgroundColor(Ui.PANEL);
+        padWarn.setVisibility(View.GONE);
+        root.addView(padWarn);
 
         // cuerpo: telemetría | juego
         body = new LinearLayout(this);
@@ -716,6 +726,24 @@ public final class MainActivity extends Activity {
         setConnected(false, null);
         updateTouchPad();
         return root;
+    }
+
+    private final Runnable hidePadWarn = () -> padWarn.setVisibility(View.GONE);
+
+    private void setPadWarn(String err, boolean changed) {
+        ui.removeCallbacks(hidePadWarn);
+        if (err != null && !err.isEmpty()) {
+            padWarn.setTextColor(Ui.AMBER);
+            Ui.set(padWarn, "El PC no tiene mando virtual: " + err + ". Se reintenta solo.");
+            padWarn.setVisibility(View.VISIBLE);
+        } else if (changed) {
+            padWarn.setTextColor(Ui.OK);
+            Ui.set(padWarn, "Mando virtual listo en el PC.");
+            padWarn.setVisibility(View.VISIBLE);
+            ui.postDelayed(hidePadWarn, 4000);
+        } else {
+            padWarn.setVisibility(View.GONE);
+        }
     }
 
     private void guideTick() {

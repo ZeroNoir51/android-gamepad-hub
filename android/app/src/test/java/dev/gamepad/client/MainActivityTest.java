@@ -157,6 +157,22 @@ public class MainActivityTest {
         assertEquals(View.GONE, touch.getVisibility());
     }
 
+    @Test public void avisoSinMandoVirtual() throws Exception {
+        call("showHud", new Class<?>[0]);
+        call("onMessage", new Class<?>[] {JSONObject.class}, new JSONObject(
+                "{\"t\":\"hello\",\"v\":\"0.4.1\",\"host\":\"pc\",\"pad\":\"sin mando virtual\",\"padErr\":\"sin permiso para /dev/uinput\"}"));
+        TextView w = (TextView) field("padWarn");
+        assertEquals(View.VISIBLE, w.getVisibility());
+        assertTrue(w.getText().toString().contains("sin permiso para /dev/uinput"));
+        call("onMessage", new Class<?>[] {JSONObject.class}, new JSONObject("{\"t\":\"pad\",\"name\":\"GamePad\",\"err\":null}"));
+        assertEquals("Mando virtual listo en el PC.", w.getText().toString());
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(5));
+        assertEquals(View.GONE, w.getVisibility());
+        call("onMessage", new Class<?>[] {JSONObject.class}, new JSONObject(
+                "{\"t\":\"hello\",\"v\":\"0.4.1\",\"host\":\"pc\",\"pad\":\"GamePad\",\"padErr\":null}"));
+        assertEquals(View.GONE, w.getVisibility());
+    }
+
     @Test public void sinJuegoNoHayFondoNiAjustesDePlugin() throws Exception {
         call("showHud", new Class<?>[0]);
         call("onMessage", new Class<?>[] {JSONObject.class}, new JSONObject("{\"t\":\"game\",\"state\":\"none\"}"));

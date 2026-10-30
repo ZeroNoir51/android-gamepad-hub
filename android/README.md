@@ -20,7 +20,7 @@ no hay que cambiar nada en el PC. Sin librerías externas: la APK ocupa unos 32 
 
 Las versiones nuevas se instalan encima solo si están firmadas con la misma clave (ver "Firma").
 
-## Qué hay en esta versión (0.2)
+## Qué hay en esta versión (0.3)
 
 - Conexión con código, reconexión automática y vuelta al login si la sesión caduca.
 - Mando: botones, cruceta (teclas o hat), sticks (Z/RZ o RX/RY según el mando), gatillos (analógicos o
@@ -34,6 +34,7 @@ Las versiones nuevas se instalan encima solo si están firmadas con la misma cla
 - **Ajustes** del panel por plugin (como en la web): fondo (imágenes del PC), oscurecido, telemetría a la
   izquierda/derecha/oculta, orden y columnas.
 - **Servidor**: vuelve a la pantalla de conexión.
+- Aviso si el PC no pudo crear el mando virtual (sin permiso para `/dev/uinput`), y otro cuando ya está listo.
 
 ## Compilar
 

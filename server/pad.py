@@ -6,6 +6,7 @@ Windows (futuro): implementar WindowsPad con ViGEmBus (p. ej. el paquete
 import fcntl
 import os
 import struct
+import time
 
 from . import protocol
 
@@ -13,6 +14,7 @@ from . import protocol
 class NullPad:
     """No emite nada; sirve para probar telemetría y plugins sin /dev/uinput."""
     name = 'null (sin mando virtual)'
+    error = None
 
     def __init__(self):
         self.state = protocol.neutral()
@@ -54,6 +56,7 @@ EVENT = struct.Struct('llHHi')         # struct input_event (timeval nativo; el 
 
 class UInputPad:
     name = 'GamePad Virtual Xbox 360'
+    error = None
 
     def __init__(self, path='/dev/uinput'):
         self.fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
@@ -104,14 +107,68 @@ class UInputPad:
             self.fd = None
 
 
+def describe(ex):
+    """Causa legible (log y Android) de que no se pueda crear el mando."""
+    if isinstance(ex, PermissionError):
+        return ('sin permiso para /dev/uinput: añade la regla udev de "Permisos del mando" (README) '
+                'y vuelve a iniciar sesión')
+    if isinstance(ex, FileNotFoundError):
+        return 'no existe /dev/uinput: carga el módulo con "sudo modprobe uinput" (y uinput en /etc/modules-load.d/)'
+    return f'no se pudo crear el mando virtual: {ex}'
+
+
+class RetryPad:
+    """Sin /dev/uinput al arrancar: el servicio sigue (web, telemetría, juego) sin mando
+    virtual y reintenta crearlo cada RETRY_EVERY s, sin reiniciar nada."""
+    RETRY_EVERY = 10.0
+
+    def __init__(self, error):
+        self.inner = None
+        self.error = error
+        self.state = protocol.neutral()
+        self._next = time.monotonic() + self.RETRY_EVERY
+
+    @property
+    def name(self):
+        return self.inner.name if self.inner else 'sin mando virtual'
+
+    def retry(self, now=None):
+        """True si el mando se acaba de crear."""
+        now = time.monotonic() if now is None else now
+        if self.inner is not None or now < self._next:
+            return False
+        self._next = now + self.RETRY_EVERY
+        try:
+            self.inner = UInputPad()
+        except OSError as ex:
+            self.error = describe(ex)
+            return False
+        self.error = None
+        self.inner.apply(self.state)
+        return True
+
+    def apply(self, state):
+        if self.inner is not None:
+            self.inner.apply(state)
+        self.state = state
+
+    def reset(self):
+        self.apply(protocol.neutral())
+
+    def close(self):
+        if self.inner is not None:
+            self.inner.close()
+
+
 def create_pad(kind):
-    """kind: 'uinput' | 'null' | 'auto'."""
+    """kind: 'auto' (por defecto: si falla, sigue sin mando y reintenta) | 'uinput' (obligatorio) | 'null'."""
     if kind == 'null':
         return NullPad()
     try:
         return UInputPad()
-    except Exception as ex:  # PermissionError, FileNotFoundError...
+    except OSError as ex:   # PermissionError, FileNotFoundError...
         if kind == 'uinput':
             raise
-        print(f'[pad] uinput no disponible ({ex!r}); usando NullPad', flush=True)
-        return NullPad()
+        print(f'[pad] AVISO: {describe(ex)}. El servicio sigue sin mando virtual y lo reintenta cada '
+              f'{RetryPad.RETRY_EVERY:.0f} s.', flush=True)
+        return RetryPad(describe(ex))
