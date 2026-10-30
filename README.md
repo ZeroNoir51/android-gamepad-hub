@@ -231,6 +231,7 @@ Las imágenes las pone el usuario; el proyecto no incluye arte de ningún juego:
 Plugins incluidos en el repositorio:
 
 - [`plugins/ffrs`](plugins/ffrs/README.md): FINAL FANTASY RESONANCE (Steam).
+- [`plugins/trails2`](plugins/trails2/README.md): Trails in the Sky 2nd Chapter (2026), por firmas (en pruebas).
 - `plugins/demo_game.py`: para `tools/demo_game.py`.
 
 No uses plugins en juegos online con anti-cheat.
