@@ -13,7 +13,17 @@ UNITS="$HOME/.config/systemd/user"
 mkdir -p "$BIN" "$UNITS"
 cat > "$BIN/gamepad" <<EOS
 #!/bin/sh
-PYTHONPATH="$DIR" exec "$DIR/.venv/bin/python" -m server "\$@"
+# Dentro de un Flatpak (Heroic) el python del venv puede no existir: \`run\` solo usa la
+# biblioteca estándar, así que vale el python3 del sandbox. Sin ninguno, se lanza el juego solo.
+PY="$DIR/.venv/bin/python"
+if ! "\$PY" -c '' 2>/dev/null; then
+  PY="\$(command -v python3 || true)"
+  if [ -z "\$PY" ] && [ "\${1:-}" = run ]; then
+    shift; [ "\${1:-}" = -- ] && shift
+    exec "\$@"
+  fi
+fi
+PYTHONPATH="$DIR" exec "\$PY" -m server "\$@"
 EOS
 chmod 755 "$BIN/gamepad"
 cp "$DIR/tools/gamepad.service" "$UNITS/gamepad.service"

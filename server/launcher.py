@@ -143,7 +143,7 @@ def main(argv):
         return 2
     # Nuestros mensajes van a un log; la salida estándar original queda para el juego.
     try:
-        log = open(paths.runtime_dir() / 'launcher.log', 'w', buffering=1)
+        log = open(paths.log_dir() / 'launcher.log', 'w', buffering=1)
         sys.stdout = sys.stderr = log
     except OSError:
         pass

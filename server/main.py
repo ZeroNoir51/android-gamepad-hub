@@ -254,16 +254,22 @@ def main(argv=None):
             writer.close()
 
     async def bridge_server():
-        sock = paths.socket_path()
-        sock.unlink(missing_ok=True)
-        server = await asyncio.start_unix_server(bridge_client, str(sock), limit=65536)
-        os.chmod(sock, 0o600)
-        print(f'[bridge] escuchando en {sock}', flush=True)
+        # Dos sockets: /run/user (normal) y ~/.cache (lanzadores dentro de Flatpak, como Heroic).
+        servers = []
+        for sock in paths.socket_paths():
+            try:
+                sock.unlink(missing_ok=True)
+                servers.append((sock, await asyncio.start_unix_server(bridge_client, str(sock), limit=65536)))
+                os.chmod(sock, 0o600)
+                print(f'[bridge] escuchando en {sock}', flush=True)
+            except OSError as ex:
+                print(f'[bridge] no se pudo abrir {sock}: {ex}', flush=True)
         try:
             await asyncio.Event().wait()
         finally:
-            server.close()
-            sock.unlink(missing_ok=True)
+            for sock, server in servers:
+                server.close()
+                sock.unlink(missing_ok=True)
 
     async def lifetime(app):
         tasks = [asyncio.create_task(c()) for c in (input_watchdog, telemetry_loop, bridge_server, pad_retry)]

@@ -105,6 +105,12 @@ Para que el lanzador lea FPS y datos del juego, en las propiedades del juego →
 
 Sin esto, el mando y la telemetría del sistema funcionan igual; solo faltan FPS y datos del juego.
 
+### Heroic (también Flatpak)
+
+Heroic no tiene `%command%`: usa un *wrapper*. En la configuración del juego → **Otros** → **Usar wrapper**, añade uno con comando `/home/TU_USUARIO/.local/bin/gamepad` y argumentos `run`. Para los FPS, activa también MangoHud en Heroic (en Flatpak necesita la extensión `org.freedesktop.Platform.VulkanLayer.MangoHud`).
+
+Dentro del Flatpak el lanzador usa el `python3` del sandbox (solo necesita la biblioteca estándar), se comunica con el servicio por `~/.cache/gamepad/hub.sock` y deja su registro en `~/.cache/gamepad/launcher.log`. Si en el sandbox no hubiera Python, el juego se lanza igual, sin datos. Requiere que Heroic tenga acceso a tu carpeta personal.
+
 ### Permisos del mando (`/dev/uinput`)
 
 El paquete de Steam suele instalar reglas udev que dan acceso a `/dev/uinput` al usuario con sesión iniciada; `install.sh` lo comprueba. Si falta, una sola vez:
@@ -187,7 +193,7 @@ Solo puede haber un cliente conectado a la vez.
 - **Táctil** (web): mando en pantalla, por si no hay mando físico. En la app se configura en *Ajustes*.
 - Si no hay juego con plugin, la telemetría ocupa toda la pantalla.
 
-Si el juego no muestra datos, el registro del lanzador está en `$XDG_RUNTIME_DIR/gamepad/launcher.log` (normalmente `/run/user/1000/gamepad/launcher.log`). Para probar sin un juego: `gamepad run python3 tools/demo_game.py`.
+Si el juego no muestra datos, el registro del lanzador está en `$XDG_RUNTIME_DIR/gamepad/launcher.log` (normalmente `/run/user/1000/gamepad/launcher.log`; con Heroic Flatpak, `~/.cache/gamepad/launcher.log`). Para probar sin un juego: `gamepad run python3 tools/demo_game.py`.
 
 ### FPS y MangoHud
 
