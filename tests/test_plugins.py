@@ -51,3 +51,24 @@ def test_error_definitivo_no_se_reintenta():
     assert m._scan() is None
     assert m._scan() is None and plugin.failures == 0  # no volvió a llamar a on_attach
     assert FakeMem.closed == 1
+
+
+def test_explica_cuando_el_juego_corre_fuera_del_arbol(monkeypatch, capsys):
+    shell = ProcInfo(501, 'gamemoderun', 'gamemoderun', 'gamemoderun umu_run.py')
+    monkeypatch.setattr(P, 'descendants', lambda root: [shell])
+    monkeypatch.setattr(P, 'iter_processes', lambda: [shell, PROC])   # el juego, en otra rama
+    m = P.PluginManager([Flaky(failures=0)], root_pid=1)
+    assert m._scan() is None and capsys.readouterr().out == ''        # aún arrancando: silencio
+    m._started -= m.NOT_FOUND_LOG_AFTER
+    assert m._scan() is None
+    out = capsys.readouterr().out
+    assert 'gamemoderun' in out and 'PID 500' in out and 'NO es descendiente' in out
+    m._scan()
+    assert capsys.readouterr().out == ''                              # una sola vez
+
+
+def test_no_explica_si_el_juego_es_descendiente_pero_aun_arranca(capsys):
+    m = P.PluginManager([Flaky(failures=5)], root_pid=1)
+    m._started -= m.NOT_FOUND_LOG_AFTER
+    m._scan()
+    assert 'ningún juego' not in capsys.readouterr().out

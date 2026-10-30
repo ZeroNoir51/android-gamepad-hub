@@ -111,6 +111,8 @@ Heroic no tiene `%command%`: usa un *wrapper*. En la configuraci贸n del juego 鈫
 
 Dentro del Flatpak el lanzador usa el `python3` del sandbox (solo necesita la biblioteca est谩ndar), se comunica con el servicio por `~/.cache/gamepad/hub.sock` y deja su registro en `~/.cache/gamepad/launcher.log`. Si en el sandbox no hubiera Python, el juego se lanza igual, sin datos. Requiere que Heroic tenga acceso a tu carpeta personal.
 
+**Limitaci贸n de Heroic Flatpak con umu** (Proton con Steam Linux Runtime, como los `-slr`): el contenedor del juego lo crea Flatpak, fuera del 谩rbol de procesos de `gamepad run`, y sin root no se puede leer su memoria. El mando, la telemetr铆a y los FPS funcionan; los datos del plugin no. `launcher.log` lo indica ("NO es descendiente de `gamepad run`"). Soluci贸n: **Heroic AppImage** (o un paquete nativo), donde el juego s铆 queda como hijo del lanzador.
+
 ### Permisos del mando (`/dev/uinput`)
 
 El paquete de Steam suele instalar reglas udev que dan acceso a `/dev/uinput` al usuario con sesi贸n iniciada; `install.sh` lo comprueba. Si falta, una sola vez:

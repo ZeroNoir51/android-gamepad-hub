@@ -34,7 +34,7 @@ KINDS = {'number', 'bar', 'text', 'image'}
 SECTIONS = {'party', 'stats', 'info', 'header'}
 TONES = {'hp', 'mp', 'limit', 'gold', 'xp', 'neutral'}
 
-from .memory import MemoryReadError, ProcessGone, descendants, open_process
+from .memory import MemoryReadError, ProcessGone, descendants, iter_processes, open_process
 
 
 @dataclass
@@ -195,6 +195,7 @@ class PluginManager:
     SCAN_EVERY = 2.0
     ERROR_EVERY = 2.0
     RETRY_LOG_EVERY = 30.0   # s; un enganche que aún no puede leer se reintenta en silencio
+    NOT_FOUND_LOG_AFTER = 20.0   # s sin encontrar el juego: se explica en el log (una vez)
     READ_TIMEOUT = 5.0       # s; un read() más lento se avisa y no se lanza otro hasta que acabe
 
     def __init__(self, plugins, root_pid):
@@ -207,6 +208,8 @@ class PluginManager:
         self._retrying = {}    # (plugin_id, pid) -> próximo log; el juego aún arranca
         self._logged_errors = set()
         self._pending = None   # read() en curso que superó READ_TIMEOUT
+        self._started = time.monotonic()
+        self._explained = False
 
     @property
     def period(self):
@@ -219,11 +222,27 @@ class PluginManager:
         return {'t': 'game', 'state': 'attached', 'id': plugin.id, 'name': plugin.name,
                 'pid': proc.pid, 'fields': [asdict(f) for f in plugin.fields]}
 
+    def _explain_not_found(self, procs):
+        """El juego no aparece entre los descendientes: decir qué hay y si corre fuera."""
+        names = sorted({p.comm for p in procs})
+        print(f'[plugins] ningún juego con plugin entre los {len(procs)} procesos descendientes: '
+              f'{", ".join(names[:30]) or "ninguno"}', flush=True)
+        mine = {p.pid for p in procs}
+        outside = [(plugin.id, proc.pid) for proc in iter_processes() if proc.pid not in mine
+                   for plugin in self.plugins if plugin.matches(proc)]
+        for plugin_id, pid in outside[:5]:
+            print(f'[plugins] {plugin_id}: el juego corre (PID {pid}) pero NO es descendiente de '
+                  '`gamepad run`, así que no se puede leer su memoria sin root. Pasa con lanzadores '
+                  'que crean el juego en otro sandbox (p. ej. Heroic Flatpak + umu); ver README.', flush=True)
+
     def _scan(self):
-        for proc in descendants(self.root_pid):
+        procs = descendants(self.root_pid)
+        matched = False
+        for proc in procs:
             for plugin in self.plugins:
                 if (plugin.id, proc.pid) in self._failed or not plugin.matches(proc):
                     continue
+                matched = True
                 key, mem = (plugin.id, proc.pid), None
                 try:
                     mem = open_process(proc.pid, plugin.ptr_size)
@@ -245,6 +264,11 @@ class PluginManager:
                     print(f'[plugins] {plugin.id}: no se pudo enganchar al PID {proc.pid}: {ex}', flush=True)
                 if mem is not None:
                     mem.close()
+        if matched:
+            self._explained = True       # el juego está; si no se engancha, ya se dijo por qué
+        elif not self._explained and time.monotonic() - self._started >= self.NOT_FOUND_LOG_AFTER:
+            self._explained = True
+            self._explain_not_found(procs)
         return None
 
     def _detach(self):
