@@ -85,7 +85,7 @@ public class ScreenshotTest {
 
     private static String member(int n, String name, int lv, int hp, int hpMax, int ep, int epMax, int cp) {
         String p = "\"p" + n + "_";
-        return p + "name\":\"" + name + "\"," + p + "lv\":\"Nv " + lv + "\"," + p + "hp\":" + hp + "," + p + "hp_max\":" + hpMax
+        return p + "name\":\"" + name + "\"," + p + "lv\":\"Nv " + lv + " · Sig. 1.716\"," + p + "hp\":" + hp + "," + p + "hp_max\":" + hpMax
                 + "," + p + "ep\":" + ep + "," + p + "ep_max\":" + epMax + "," + p + "cp\":" + cp + "," + p + "cp_max\":200";
     }
 

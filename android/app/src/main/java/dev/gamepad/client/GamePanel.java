@@ -246,16 +246,17 @@ final class GamePanel {
     /** Tarjeta "anillo": nombre arriba; barras inclinadas a la izquierda y retrato con arco a la derecha. */
     private LinearLayout newRingCard() {
         LinearLayout card = Ui.column(c);
-        LinearLayout names = Ui.row(c);
-        names.setGravity(Gravity.BOTTOM);
+        LinearLayout names = Ui.column(c);   // nombre y, debajo, nivel: nombres largos no cortan el nivel
         card.addView(names);
         LinearLayout body = Ui.row(c);
         body.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout bars = Ui.column(c);
         body.addView(bars, new LinearLayout.LayoutParams(0, -2, 1f));
+        // Marco algo mayor que el anillo: la insignia del CP queda abajo a la derecha, fuera de la cara
         FrameLayout frame = new FrameLayout(c);
+        int ring = Ui.dp(c, 84);
         RingView arc = new RingView(c);
-        frame.addView(arc, new FrameLayout.LayoutParams(-1, -1));
+        frame.addView(arc, new FrameLayout.LayoutParams(ring, ring, Gravity.TOP | Gravity.START));
         FrameLayout ava = new FrameLayout(c);
         ava.setBackground(Ui.rounded(Ui.PANEL, 0xBFFFFFFF, 40, c));
         ava.setOutlineProvider(new ViewOutlineProvider() {
@@ -269,11 +270,11 @@ final class GamePanel {
         img.setScaleType(ImageView.ScaleType.CENTER_CROP);
         img.setVisibility(View.GONE);
         ava.addView(img, new FrameLayout.LayoutParams(-1, -1));
-        FrameLayout.LayoutParams alp = new FrameLayout.LayoutParams(-1, -1);
         int m = Ui.dp(c, 10);
-        alp.setMargins(m, m, m, m);
+        FrameLayout.LayoutParams alp = new FrameLayout.LayoutParams(ring - 2 * m, ring - 2 * m, Gravity.TOP | Gravity.START);
+        alp.setMargins(m, m, 0, 0);
         frame.addView(ava, alp);
-        LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(Ui.dp(c, 84), Ui.dp(c, 84));
+        LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(ring + Ui.dp(c, 12), ring + Ui.dp(c, 14));
         flp.leftMargin = Ui.dp(c, 6);
         body.addView(frame, flp);
         card.addView(body);
@@ -297,9 +298,8 @@ final class GamePanel {
                 b.text.setText(b.label);
                 b.isName = true;
                 b.initial = (TextView) parts[0];
-            } else {
-                b.text.setPadding(Ui.dp(c, 8), 0, 0, 0);
             }
+            b.text.setEllipsize(android.text.TextUtils.TruncateAt.END);
             names.addView(b.text);
         } else if ("limit".equals(tone) && arc.getTag() == null) {
             // el primer "limit" (CP, Limit...) es el arco del retrato, con su número en una insignia
