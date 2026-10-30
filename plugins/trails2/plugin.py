@@ -406,9 +406,12 @@ class Plugin(GamePlugin):
             members = [addrs[cid] for cid in active if cid in addrs]
             self._party_src = f'lista del juego (bloque+0x{self._party_off:X})'
         else:
+            # Sin grupo fiable no se muestra nada: los primeros registros encontrados pueden ser
+            # personajes que el jugador ni tiene (salía Dorothy)
             active = None
-            members = [first + k * stride for k in range(min(n, 4))]
-            self._party_src = 'sin lista del grupo: primeros registros encontrados'
+            members = []
+            self._party_src = 'grupo no identificado: sin tarjetas para no mostrar personajes equivocados'
+            values['party_status'] = 1
         for slot, addr in enumerate(members, 1):
             rec = roster.read_record(mem, addr)
             values[f'p{slot}_name'] = NAMES.get(rec['id'], f'ID {rec["id"]}')
@@ -487,7 +490,8 @@ class Plugin(GamePlugin):
                 self._lookups_dumped = True
                 self._dump_lookups(mem, self.exp_func)
             self._party(mem, values, run)
-            values['status'] = 'Lectura OK'
+            values['status'] = ('Grupo no identificado (ver Diag. grupo)' if values.pop('party_status', None)
+                                else 'Lectura OK')
         else:
             values['dbg_roster'] = self._scan_note
             values['status'] = 'Mira y tiempo de juego OK; personajes aún no encontrados'

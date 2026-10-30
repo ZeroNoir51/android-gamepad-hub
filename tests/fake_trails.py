@@ -17,6 +17,7 @@ HEAP = 0x20000000
 BLOCK_SIZE = 0x700000
 PLAYTIME = 0x20B650
 ROSTER_AT, STRIDE = 0x18000, 0x2A8
+PARTY_LIST = 0x5145C
 
 
 class FakeMemory(LinuxProcessMemory):
@@ -136,7 +137,13 @@ class FakeTrails:
         for i, cid in enumerate(ids):
             lv = 20 + i
             self.character(i, cid, lv, lv * 1000, 900 + i, 1000 + i * 10, 80 + i, 100 + i, 50 + i, **kw)
+        self.party_list(ids[:4])
         return ids
+
+    def party_list(self, ids, at=PARTY_LIST):
+        """Lista de miembros del juego (u16 en orden; los 4 primeros forman el grupo)."""
+        for i in range(8):
+            self.mem.put('u16', self.block + at + i * 2, ids[i] if i < len(ids) else 0)
 
     def proc(self):
         return ProcInfo(self.mem.pid, MODULE, MODULE, f'Z:\\game\\{MODULE}')

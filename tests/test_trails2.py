@@ -133,7 +133,7 @@ def test_el_plugin_es_valido_para_el_hub(tmp_path):
     from server import plugins as P
     from conftest import ROOT
     ids = {p.id: p for p in P.load_plugins(ROOT / 'plugins')}
-    assert ids['trails2'].version == '0.7.5'
+    assert ids['trails2'].version == '0.7.6'
 
 
 def test_un_array_de_numeros_parecidos_no_gana_al_grupo(attach):
@@ -232,6 +232,7 @@ def test_siguiente_nivel_en_las_tarjetas(attach, capsys):
     g.money(1, SEPITH, 10.0)
     g.character(0, 0, 46, 230_000, 900, 1000, 80, 100, 50)    # Estelle
     g.character(1, 3, 46, 300_000, 900, 1000, 80, 100, 50)    # EXP que no cuadra con la fórmula
+    g.party_list([0, 3])
     with_exp_code(g)
     plugin = attach(g)
     assert 'EXP total = 100·N·(N+3) × 1' in capsys.readouterr().out
@@ -281,11 +282,13 @@ def test_grupo_activo_desde_la_lista_del_juego(attach, capsys):
     assert 'rejilla bloque+0x114000' in out and 'ID 0 Estelle' in out
 
 
-def test_sin_lista_valida_usa_los_primeros_registros(attach):
+def test_sin_lista_valida_no_se_inventa_el_grupo(attach):
+    # Antes se mostraban los primeros registros encontrados: salía Dorothy, que el jugador no tiene
     g = loaded()
-    g.mem.put('u16', g.block + 0x5145C, 0)                     # ceros: no es una lista
+    g.party_list([])                                            # ceros: no es una lista
     v = attach(g).read(g.mem)
-    assert v['p1_name'] == 'Estelle' and v['p4_name'] == 'Olivier'
+    assert 'p1_name' not in v and v['status'].startswith('Grupo no identificado')
+    assert v['mira'] == 123456                                  # lo demás se sigue leyendo
 
 
 def test_grupo_con_registros_fuera_de_la_serie(attach, capsys):
