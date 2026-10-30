@@ -236,7 +236,7 @@ def test_siguiente_nivel_en_las_tarjetas(attach, capsys):
     plugin = attach(g)
     assert 'EXP total = 100·N·(N+3) × 1' in capsys.readouterr().out
     v = plugin.read(g.mem)
-    assert v['p1_lv'] == 'Nv 46 · Siguiente 5.000'
+    assert v['p1_lv'] == 'Nv 46 · Sig. 5.000'
     assert v['p2_lv'] == 'Nv 46' and 'no cuadra con Olivier' in v['dbg_exp']
 
 

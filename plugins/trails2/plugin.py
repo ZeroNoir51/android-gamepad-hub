@@ -167,7 +167,7 @@ class Plugin(GamePlugin):
                               f'(Nv {level}, {fmt(exp)} EXP)')
             return f'Nv {level}'
         nxt = self.curve.next(level, exp)
-        return f'Nv {level} · Siguiente {fmt(nxt)}' if nxt else f'Nv {level} · Máx.'
+        return f'Nv {level} · Sig. {fmt(nxt)}' if nxt else f'Nv {level} · Máx.'
 
     def _party(self, mem, values, run):
         first, stride, n = run
