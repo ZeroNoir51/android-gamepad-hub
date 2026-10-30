@@ -159,7 +159,7 @@ class MangoHudTail:
             self.status = f'no se puede leer {self.folder}: {ex.strerror}'
             return None
         if newest is None:
-            self.status = f'{self.folder} existe pero MangoHud no ha escrito ningún log'
+            self.status = ''   # normal sin juego: el lanzador borra el log al cerrarlo
         return newest
 
     def _open(self, path):
@@ -217,7 +217,12 @@ class MangoHudTail:
             if done - self.punched >= self.PUNCH_EVERY and punch_hole(self.path, done):
                 self.punched = done
         if self.fh and now - self.last_row_at > self.STALE_AFTER:
-            self.status = f'{self.path.name} no recibe datos (¿juego cerrado o logging parado?)'
+            # Juego cerrado o en pausa: no es un error y no se avisa. Si el lanzador ya
+            # borró el log, se suelta para que su espacio se libere de verdad.
+            self.status = ''
+            if not self.path.exists():
+                self.fh.close()
+                self.path, self.fh = None, None
         if now - self.last_row_at > self.STALE_AFTER:
             return {'fps': None, 'ft': None, 'ftNew': [], 'mh': self.status}
         self.status = f'ok: {self.path.name}'

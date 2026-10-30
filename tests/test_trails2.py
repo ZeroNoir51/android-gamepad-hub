@@ -29,15 +29,15 @@ def loaded(**kw):
     return g
 
 
-def test_lee_mira_sepith_tiempo_y_grupo(attach):
+def test_lee_mira_tiempo_y_grupo(attach):
     g = loaded()
     v = attach(g).read(g.mem)
     assert v['status'] == 'Lectura OK'
     assert v['mira'] == 123456
     assert v['playtime'] == '3 h 25 min'
-    assert v['sepith'].startswith('Tierra 11 · Agua 22') and v['sepith'].endswith('Masa 888')
+    assert 'sepith' not in v                                   # no hace falta en el panel
     assert v['p1_name'] == 'Estelle' and v['p2_name'] == 'Joshua'
-    assert v['p1_lv'] == 'Nv 20 · 20.000 EXP'
+    assert v['p1_lv'] == 'Nv 20'
     assert (v['p1_hp'], v['p1_hp_max'], v['p1_ep'], v['p1_ep_max'], v['p1_cp'], v['p1_cp_max']) == \
         (900, 1000, 80, 100, 50, 200)
     assert v['p4_name'] == 'Olivier' and 'p5_name' not in v
@@ -46,10 +46,10 @@ def test_lee_mira_sepith_tiempo_y_grupo(attach):
 
 
 def test_el_offset_del_tiempo_sale_de_la_firma(attach):
-    # Un parche que mueve el bloque: Mira y sepith siguen al offset leído del código
+    # Un parche que mueve el bloque: Mira sigue al offset leído del código
     g = loaded(playtime_off=0x20B700)
     v = attach(g).read(g.mem)
-    assert v['mira'] == 123456 and v['sepith'].endswith('Masa 888')
+    assert v['mira'] == 123456
     assert '0x20B700 (leído de la firma)' in v['dbg_sig']
 
 
@@ -83,7 +83,7 @@ def test_pantalla_de_titulo_y_despues_partida(attach):
     g.money(500, SEPITH, 60.0)
     plugin._next_scan = 0.0
     v = plugin.read(g.mem)
-    assert v['mira'] == 500 and v['status'] == 'Mira y sepith OK; personajes aún no encontrados'
+    assert v['mira'] == 500 and v['status'] == 'Mira y tiempo de juego OK; personajes aún no encontrados'
     g.party()
     plugin._next_scan = 0.0            # sin esperar los 10 s entre búsquedas
     assert plugin.read(g.mem)['p1_name'] == 'Estelle'
@@ -133,7 +133,7 @@ def test_el_plugin_es_valido_para_el_hub(tmp_path):
     from server import plugins as P
     from conftest import ROOT
     ids = {p.id: p for p in P.load_plugins(ROOT / 'plugins')}
-    assert ids['trails2'].version == '0.1.0'
+    assert ids['trails2'].version == '0.2.0'
 
 
 def test_un_array_de_numeros_parecidos_no_gana_al_grupo(attach):
@@ -159,3 +159,45 @@ def test_ventana_desplazada_anterior_no_gana_por_empate(trails):
     roster = load_plugin('trails2', 'roster')
     ids = {0x1000: 0, 0x1400: 1, 0x1800: 2, 0x0FF0: 900, 0x13F0: 901, 0x17F0: 902}
     assert roster.best_run(sorted(ids), ids.get, known={0, 1, 2}) == (0x1000, 0x400, 3)
+
+
+def test_lista_del_grupo_en_el_diagnostico(attach, capsys):
+    g = loaded()
+    for i, cid in enumerate((0, 2, 4, 3)):                 # Estelle, Scherazard, Kloe, Olivier
+        g.mem.put('u16', g.block + 0x50000 + i * 2, cid)
+    v = attach(g).read(g.mem)
+    assert 'u16 +0x50000: Estelle, Scherazard, Kloe, Olivier' in v['dbg_party']
+    assert 'grupo? ' in capsys.readouterr().out
+
+
+def test_retratos(attach, data_home):
+    g = loaded()
+    folder = data_home / 'gamepad' / 'portraits' / 'trails2'
+    folder.mkdir(parents=True)
+    (folder / 'estelle.png').write_bytes(b'x')
+    v = attach(g).read(g.mem)
+    assert v['p1_img'] == '/portraits/trails2/estelle.png' and v['p2_img'] is None
+
+
+def test_vuelca_el_codigo_de_la_exp_por_nivel(attach, capsys):
+    import struct
+    g = loaded()
+    hit = BASE + TEXT_RVA + 0x6000 + 0x4E
+    g.mem.write(hit, bytes.fromhex('448B4304443BC07C0D33C0488B5C2430'))
+    call = hit + 0x1E
+    target = BASE + TEXT_RVA + 0x5F10
+    g.mem.write(call, b'\xE8' + struct.pack('<i', target - (call + 5)))
+    g.mem.write(target, bytes.fromhex('4889'))
+    attach(g)
+    out = capsys.readouterr().out
+    assert f'EXP total exe+0x{target - BASE:X}' in out and f'total exe+0x{target - BASE:X}: 48 89' in out
+
+
+def test_estilo_de_tarjetas(trails):
+    from server import plugins as P
+    assert trails.Plugin.party_style == 'ring'
+    bad = trails.Plugin()
+    bad.party_style = 'otro'
+    import pytest as _p
+    with _p.raises(ValueError, match='party_style'):
+        P.check_plugin(bad)

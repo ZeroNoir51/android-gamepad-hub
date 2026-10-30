@@ -1,7 +1,7 @@
 {
   "id": "trails2",
   "name": "Trails in the Sky 2nd Chapter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "api": 2,
   "entry": "plugin.py",
   "description": "Grupo (nivel, EXP, HP, EP, CP), Mira, sepith y tiempo de juego de Trails in the Sky 2nd Chapter (2026). Solo lectura, por firmas.",

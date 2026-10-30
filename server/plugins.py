@@ -33,6 +33,7 @@ VERSION_RE = re.compile(r'^\d+(\.\d+){0,3}$')
 KINDS = {'number', 'bar', 'text', 'image'}
 SECTIONS = {'party', 'stats', 'info', 'header'}
 TONES = {'hp', 'mp', 'limit', 'gold', 'xp', 'neutral'}
+PARTY_STYLES = {'bars', 'ring'}
 
 from .memory import MemoryReadError, ProcessGone, descendants, iter_processes, open_process
 
@@ -56,6 +57,7 @@ class GamePlugin:
     cmdline_contains = None   # alternativa: subcadena de la línea de comandos
     ptr_size = 8              # 4 para juegos de 32 bits
     poll_hz = 4
+    party_style = 'bars'      # tarjetas del grupo: 'bars' (barras) o 'ring' (retrato con anillo)
     fields = []
 
     def matches(self, proc):
@@ -110,6 +112,8 @@ def check_plugin(plugin):
         raise TypeError('Plugin debe heredar de GamePlugin')
     if not ID_RE.match(plugin.id or ''):
         raise ValueError(f'id inválido {plugin.id!r}')
+    if plugin.party_style not in PARTY_STYLES:
+        raise ValueError(f'party_style desconocido {plugin.party_style!r}')
     seen = set()
     for f in plugin.fields:
         if f.key in seen:
@@ -220,7 +224,7 @@ class PluginManager:
             return {'t': 'game', 'state': 'none', 'plugins': [p.name for p in self.plugins]}
         plugin, _, proc = self.active
         return {'t': 'game', 'state': 'attached', 'id': plugin.id, 'name': plugin.name,
-                'pid': proc.pid, 'fields': [asdict(f) for f in plugin.fields]}
+                'pid': proc.pid, 'style': plugin.party_style, 'fields': [asdict(f) for f in plugin.fields]}
 
     def _explain_not_found(self, procs):
         """El juego no aparece entre los descendientes: decir qué hay y si corre fuera."""
