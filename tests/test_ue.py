@@ -1,9 +1,11 @@
-"""Lector UE5 (server/ue.py) contra la memoria sintética."""
+"""Lector UE5 del plugin (plugins/ffrs/ue.py) contra la memoria sintética."""
 import pytest
 
-from fake_ue import BASE, RF_BEGIN_DESTROYED, RF_CLASS_DEFAULT, RVA, FakeGame, build_ffrs
+from fake_ue import BASE, RF_BEGIN_DESTROYED, RF_CLASS_DEFAULT, RVA, U, FakeGame, build_ffrs
 from server.memory import MemoryReadError
-from server.ue import UEReader, pe_info
+from server.plugin_api import pe_info
+
+UEReader = U.UEReader
 
 
 def reader(game):

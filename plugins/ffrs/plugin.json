@@ -1,8 +1,8 @@
 {
   "id": "ffrs",
   "name": "Final Fantasy Resonance",
-  "version": "1.0.0",
-  "api": 1,
+  "version": "1.1.0",
+  "api": 2,
   "entry": "plugin.py",
   "description": "Equipo, nivel/EXP, HP, MP, Limit y Gil de FINAL FANTASY RESONANCE (Steam, build 24250053). Solo lectura.",
   "game": "FINAL FANTASY RESONANCE (Steam 3259780), build 24250053"

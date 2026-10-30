@@ -34,8 +34,9 @@ La EXP para el siguiente nivel se deriva de las curvas; compárala con el menú.
 import collections
 import time
 
-from server.plugin_api import (OBJ_CLASS, OBJ_OUTER, Field, GamePlugin, MemoryReadError,
-                               PortraitFinder, UEReader, pe_info)
+from server.plugin_api import Field, GamePlugin, MemoryReadError, PortraitFinder, pe_info
+
+from .ue import OBJ_CLASS, OBJ_OUTER, UEReader
 
 MODULE = 'FFRS-Win64-Shipping.exe'
 BUILD = {'timestamp': 0x6A586B2F, 'image_size': 503013376}     # build 24250053

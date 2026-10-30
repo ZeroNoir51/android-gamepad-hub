@@ -1,4 +1,4 @@
-import importlib.util
+import importlib
 import sys
 from pathlib import Path
 
@@ -8,14 +8,17 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'tests'))
 
+from server.plugins import import_module  # noqa: E402
 
-def load_plugin(stem):
-    if not (ROOT / 'plugins' / stem / 'plugin.py').is_file():
-        pytest.skip(f'el plugin {stem} no está en este paquete (se distribuye aparte)')
-    spec = importlib.util.spec_from_file_location(f'test_plugin_{stem}', ROOT / 'plugins' / stem / 'plugin.py')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+
+def load_plugin(stem, submodule=None):
+    """El plugin plugins/<stem>/ como paquete, igual que lo carga el hub (o uno de sus módulos)."""
+    folder = ROOT / 'plugins' / stem
+    if not (folder / 'plugin.py').is_file():
+        pytest.skip(f'el plugin {stem} no está en este paquete (se distribuye aparte)', allow_module_level=True)
+    name = f'test_plugin_{stem}'
+    module = sys.modules.get(name) or import_module(name, folder / 'plugin.py', package_dir=folder)
+    return importlib.import_module(f'{name}.{submodule}') if submodule else module
 
 
 @pytest.fixture(autouse=True)

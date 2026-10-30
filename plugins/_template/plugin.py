@@ -1,4 +1,4 @@
-"""Plantilla de plugin (API 1). Las carpetas que empiezan por "_" no se cargan.
+"""Plantilla de plugin (API 2). Las carpetas que empiezan por "_" no se cargan.
 
 Copia esta carpeta como plugins/mi_juego/, cambia "id" en plugin.json y aquí (deben
 coincidir; solo a-z, 0-9 y _) y rellena offsets. Para empaquetarla aparte:

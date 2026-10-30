@@ -135,7 +135,8 @@ def test_sin_reflexion_no_rompe_la_lectura(attach):
 
 
 def test_disposicion_de_reflexion_alternativa(attach):
-    from server.ue import REFLECTION_LAYOUTS
+    from fake_ue import U
+    REFLECTION_LAYOUTS = U.REFLECTION_LAYOUTS
     for layout in REFLECTION_LAYOUTS:
         g = FakeGame(layout=layout)
         build_ffrs(g, party=(1001,), battle=[(1001, STATS[1001])])

@@ -4,6 +4,7 @@ import json
 import stat
 import threading
 import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -63,6 +64,24 @@ def test_el_instalado_gana_al_incluido(tmp_path, capsys):
     assert 'se usa' in capsys.readouterr().out
 
 
+def test_paquete_con_modulos_propios(tmp_path):
+    # La lógica de búsqueda vive en el plugin: puede repartirla en sus propios módulos.
+    code = CODE.format(pid='mi_juego', tag='x').replace(
+        "return {'gold': 'x'}", "return {'gold': buscar()}") + '\nfrom .busqueda import buscar\n'
+    folder = make_pkg(tmp_path, code=code)
+    (folder / 'busqueda.py').write_text('from server.plugin_api import pe_info\n\ndef buscar():\n    return "propio"\n')
+    [plugin] = P.load_plugins(tmp_path)
+    assert plugin.read(None) == {'gold': 'propio'}
+
+
+def test_el_hub_no_trae_logica_de_juegos_ni_motores():
+    # El hub solo lee bytes; firmas, punteros y lectores de motor van en cada plugin.
+    for path in Path(P.__file__).parent.glob('*.py'):
+        src = path.read_text()
+        for word in ('UEReader', 'GUObjectArray', 'FNamePool', 'Win64-Shipping'):
+            assert word not in src, f'{path.name} contiene {word!r}: eso va en un plugin'
+
+
 def test_paquete_gana_al_archivo_suelto_antiguo(tmp_path):
     (tmp_path / 'incluidos').mkdir()
     (tmp_path / 'incluidos' / 'mi_juego.py').write_text(CODE.format(pid='mi_juego', tag='suelto'))
@@ -73,10 +92,10 @@ def test_paquete_gana_al_archivo_suelto_antiguo(tmp_path):
 
 @pytest.mark.parametrize('manifest, error', [
     ({'id': 'mi_juego', 'name': 'x', 'version': '1.0', 'api': 99}, 'API 99'),
-    ({'id': 'otro', 'name': 'x', 'version': '1.0', 'api': 1}, 'no coincide'),
-    ({'id': 'mi_juego', 'name': 'x', 'version': 'beta', 'api': 1}, 'versión inválida'),
-    ({'id': 'mi_juego', 'name': 'x', 'version': '1.0', 'api': 1, 'entry': '../x.py'}, 'entry inválido'),
-    ({'id': 'mi_juego', 'version': '1.0', 'api': 1}, 'falta "name"'),
+    ({'id': 'otro', 'name': 'x', 'version': '1.0', 'api': P.API_VERSION}, 'no coincide'),
+    ({'id': 'mi_juego', 'name': 'x', 'version': 'beta', 'api': P.API_VERSION}, 'versión inválida'),
+    ({'id': 'mi_juego', 'name': 'x', 'version': '1.0', 'api': P.API_VERSION, 'entry': '../x.py'}, 'entry inválido'),
+    ({'id': 'mi_juego', 'version': '1.0', 'api': P.API_VERSION}, 'falta "name"'),
 ])
 def test_manifiestos_invalidos_se_ignoran(tmp_path, capsys, manifest, error):
     make_pkg(tmp_path, manifest=manifest)
@@ -166,10 +185,10 @@ def test_instalar_pide_confirmacion(tmp_path):
     ({'mi_juego/plugin.py': 'x', 'otro/plugin.py': 'x'}, 'una sola carpeta raíz'),
     ({'plugin.json': '{}'}, 'fuera de la carpeta'),
     ({'mi_juego/plugin.py': 'x'}, 'falta mi_juego/plugin.json'),
-    ({'mi_juego/plugin.json': json.dumps({'id': 'mi_juego', 'name': 'x', 'version': '1.0', 'api': 1})},
+    ({'mi_juego/plugin.json': json.dumps({'id': 'mi_juego', 'name': 'x', 'version': '1.0', 'api': P.API_VERSION})},
      'no existe el archivo de entrada'),
-    ({'mi_juego/plugin.json': json.dumps({'id': 'mi_juego', 'name': 'x', 'version': '1.0', 'api': 2}),
-      'mi_juego/plugin.py': 'x'}, 'API 2'),
+    ({'mi_juego/plugin.json': json.dumps({'id': 'mi_juego', 'name': 'x', 'version': '1.0', 'api': 1}),
+      'mi_juego/plugin.py': 'x'}, 'API 1'),
 ])
 def test_zips_rechazados(tmp_path, entries, error):
     z = make_zip(tmp_path / 'malo.zip', entries)

@@ -1,6 +1,6 @@
 """Memoria sintética con la disposición de UE5 de FINAL FANTASY RESONANCE (build 24250053).
 
-Reproduce lo que leen server/ue.py y plugins/ffrs.py, con los offsets de la tabla
+Reproduce lo que leen plugins/ffrs/ue.py y plugins/ffrs/plugin.py, con los offsets de la tabla
 FFRS_Steam_24250053_Starter.CT (ver docstrings de esos módulos). Sirve para probar
 el lector y el plugin sin el juego: cada test arma un escenario con FakeGame y
 lee con el plugin real.
@@ -14,7 +14,9 @@ La disposición de la reflexión es configurable (FakeGame(layout=...)).
 import struct
 
 from server.memory import LinuxProcessMemory, MemoryReadError, ProcInfo
-from server import ue as U
+from conftest import load_plugin
+
+U = load_plugin('ffrs', 'ue')   # el lector de UE5 es parte del plugin
 
 MODULE = 'FFRS-Win64-Shipping.exe'
 BASE = 0x140000000

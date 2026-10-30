@@ -2,7 +2,7 @@
   "id": "mi_juego",
   "name": "Mi Juego",
   "version": "0.1.0",
-  "api": 1,
+  "api": 2,
   "entry": "plugin.py",
   "description": "Plantilla: copia esta carpeta como plugins/mi_juego/ (sin el guion bajo) y rellena offsets."
 }

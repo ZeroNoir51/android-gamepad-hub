@@ -197,16 +197,18 @@ El lanzador añade a tu configuración de MangoHud (sin tocar tu archivo) las op
 
 Un plugin lee los datos de un juego concreto. Lo ejecuta solo el lanzador, sobre los descendientes del juego que lanzó (Linux, con `kernel.yama.ptrace_scope=1`, solo deja leer la memoria de un proceso a su ancestro: por eso no hace falta root). Es código Python con acceso de lectura a la memoria del juego: instala solo los que hayas revisado.
 
-Formato (API 1):
+Formato (API 2):
 
 ```
 mi_juego/
-  plugin.json   {"id": "mi_juego", "name": "Mi Juego", "version": "1.0.0", "api": 1, "entry": "plugin.py"}
+  plugin.json   {"id": "mi_juego", "name": "Mi Juego", "version": "1.0.0", "api": 2, "entry": "plugin.py"}
   plugin.py     class Plugin(GamePlugin): ...   (importa SOLO de server.plugin_api)
+  *.py          módulos propios del plugin, opcionales (from .busqueda import ...)
 ```
 
+- **La búsqueda de valores es del plugin.** El hub solo da lectura de memoria (`read`, `u32`, `ptr`, `pointer`, `module_base`…) y `pe_info` para reconocer la build; no conoce juegos ni motores. Punteros, firmas AOB, estructuras y lectores de motor (como el de Unreal Engine de `plugins/ffrs/ue.py`) van dentro de cada plugin.
 - `id`: a-z, 0-9 y `_`; igual que el nombre de la carpeta y que `Plugin.id`.
-- `api`: versión de la API de plugins (`server/plugin_api.py`). Los plugins de otra API no se cargan.
+- `api`: versión de la API de plugins (`server/plugin_api.py`). Los plugins de otra API no se cargan (si tienes instalado uno de la API 1, como ffrs 1.0.0, se ignora y se usa el incluido; reinstálalo con la versión nueva).
 - Si un id está a la vez en `plugins/` del proyecto y en los instalados, gana el instalado.
 - Plantilla: `plugins/_template/`. Empaquetar: `sh tools/build-plugin.sh <id>`.
 - Al instalar se valida el zip: una sola carpeta `<id>/`, sin rutas `..` ni enlaces simbólicos, tamaño acotado y API compatible.
@@ -243,7 +245,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt -r requiremen
 .venv/bin/pytest -q
 ```
 
-`tests/fake_ue.py` monta en memoria una estructura de Unreal Engine 5 y ejecuta el plugin real contra ella. La red de la app Android se prueba sin Android con `android/jvmtest/` (ver [android/README.md](android/README.md)).
+`tests/fake_ue.py` monta en memoria una estructura de Unreal Engine 5 y ejecuta el plugin real (con su lector `plugins/ffrs/ue.py`) contra ella. La red de la app Android se prueba sin Android con `android/jvmtest/` (ver [android/README.md](android/README.md)).
 
 Protocolo: WebSocket `/ws` (JSON). Cliente → servidor: `in` (estado del mando, al cambiar y como latido) y `ping`. Servidor → cliente: `hello`, `tel` (`cpu`, `gpu`, `mem`, `fps`, `ft`, `ftNew[]`, `mh`), `game` (metadatos y campos del plugin), `gv` (valores o `err`), `pong`, `err`. Si no llega `in` en 500 ms, se sueltan todos los controles. Lanzador → servicio: líneas JSON por el socket Unix, solo `game` y `gv`.
 
@@ -257,7 +259,7 @@ server/
   pad.py        mando uinput (ioctl directos, sin dependencias)
   telemetry.py  /proc, /sys y log de MangoHud
   memory.py     lectura de memoria y descendientes
-  ue.py         lector de Unreal Engine 5 (nombres, objetos, reflexión)
+  pe.py         cabecera PE: build del .exe (para que los plugins la comprueben)
   plugins.py    carga y ciclo de vida de plugins
   plugin_api.py API estable para plugins
   plugin_pkg.py gamepad plugin list/install/remove

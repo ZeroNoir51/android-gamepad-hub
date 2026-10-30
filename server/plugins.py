@@ -20,12 +20,13 @@ import asyncio
 import importlib.util
 import json
 import re
+import sys
 import time
 import traceback
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-API_VERSION = 1
+API_VERSION = 2   # 2: los lectores de motor salieron del hub; cada plugin trae el suyo
 ID_RE = re.compile(r'^[a-z0-9_]{1,32}$')
 ENTRY_RE = re.compile(r'^[A-Za-z0-9_]+\.py$')
 VERSION_RE = re.compile(r'^\d+(\.\d+){0,3}$')
@@ -120,12 +121,25 @@ def check_plugin(plugin):
             raise ValueError(f'campo {f.key!r}: slot debe ser 1-4 en la sección party')
 
 
-def _import(module_name, path, package_dir=None):
+def import_module(module_name, path, package_dir=None):
+    """Importa el código de un plugin. Con package_dir es un paquete: sus módulos propios
+    se importan con import relativo (from .ue import ...)."""
     kwargs = {'submodule_search_locations': [str(package_dir)]} if package_dir else {}
     spec = importlib.util.spec_from_file_location(module_name, path, **kwargs)
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.Plugin()
+    for name in [n for n in sys.modules if n == module_name or n.startswith(module_name + '.')]:
+        del sys.modules[name]   # no mezclar con una copia anterior del mismo plugin
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        del sys.modules[module_name]
+        raise
+    return module
+
+
+def _import(module_name, path, package_dir=None):
+    return import_module(module_name, path, package_dir).Plugin()
 
 
 def load_plugins(folders):

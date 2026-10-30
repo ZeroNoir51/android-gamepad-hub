@@ -1,5 +1,8 @@
 """Lectura (solo lectura) de estructuras de Unreal Engine 5 desde otro proceso.
 
+Es parte del plugin, no del hub: el hub solo ofrece leer bytes (plugin_api) y cada
+plugin trae su propia lógica para encontrar los valores.
+
 Disposición verificada para FINAL FANTASY RESONANCE build 24250053 por la tabla
 shawnjohnjr/ff-RESONANCE-ct (FFRS_Steam_24250053_Starter.CT):
 - GNames (FNamePool): bloque actual en +0x08, punteros a bloques desde +0x10.
@@ -17,7 +20,7 @@ REFLECTION_LAYOUTS y se queda con la primera cuyos campos tienen sentido.
 import re
 import struct
 
-from .memory import MemoryReadError
+from server.plugin_api import MemoryReadError
 
 OBJ_FLAGS, OBJ_INDEX, OBJ_CLASS, OBJ_NAME, OBJ_OUTER = 0x08, 0x0C, 0x10, 0x18, 0x20
 RF_CLASS_DEFAULT = 0x10
@@ -237,13 +240,3 @@ class UEReader:
             except MemoryReadError:
                 lines.append(f'+0x{off:03X}: ilegible')
         return lines
-
-
-def pe_info(mem, module_base):
-    """TimeDateStamp y SizeOfImage de la cabecera PE: identifican la build del .exe."""
-    if mem.read(module_base, 2) != b'MZ':
-        raise MemoryReadError('el módulo no empieza con MZ')
-    nt = module_base + mem.u32(module_base + 0x3C)
-    if mem.read(nt, 4) != b'PE\0\0':
-        raise MemoryReadError('cabecera PE no encontrada')
-    return {'timestamp': mem.u32(nt + 0x08), 'image_size': mem.u32(nt + 0x50)}
