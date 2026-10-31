@@ -161,6 +161,36 @@ public class MainActivityTest {
                 a.getWindow().getAttributes().screenBrightness, 0.001f);
     }
 
+    @Test public void apagadoAutomaticoSinToques() throws Exception {
+        a.getSharedPreferences("gamepad", 0).edit().putInt("idleOff", 30).commit();
+        call("showHud", new Class<?>[0]);
+        long t = SystemClock.uptimeMillis();
+        a.dispatchTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, 10, 10, 0));
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(20));
+        // un botón del mando físico no reinicia la cuenta
+        KeyEvent k = new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BUTTON_A, 0, 0, 0, 0, 0,
+                android.view.InputDevice.SOURCE_GAMEPAD);
+        a.dispatchKeyEvent(k);
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(11));
+        View black = (View) field("blackout");
+        assertNotNull(black);
+        assertNotNull(black.getParent());                    // 30 s sin tocar la pantalla: apagada
+        black.performClick();
+        assertNull(black.getParent());
+        t = SystemClock.uptimeMillis();
+        a.dispatchTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, 10, 10, 0));
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(25));
+        assertNull(black.getParent());                       // tocar reinicia la cuenta
+    }
+
+    @Test public void botonesDeVolumenEnPantalla() throws Exception {
+        call("showHud", new Class<?>[0]);
+        TextView up = findText(a.findViewById(android.R.id.content), "▲");
+        assertNotNull(up);
+        up.performClick();
+        assertTrue(((TextView) field("foot")).getText().toString().startsWith("Volumen: Android "));
+    }
+
     @Test public void volumenSinConexionEsDelAndroid() throws Exception {
         call("showHud", new Class<?>[0]);
         // Sin conexión con el PC, la tecla no se consume aquí (el sistema cambia el volumen del Android)

@@ -85,6 +85,10 @@ public final class MainActivity extends Activity {
     /** Pantalla "apagada": capa negra con el brillo al mínimo; el mando sigue funcionando. */
     private View blackout;
     private float savedBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+    /** Apagado automático: segundos sin tocar la pantalla (0 = nunca). El mando no cuenta. */
+    static final int[] IDLE_SECONDS = {0, 30, 60, 300, 600};
+    private final Runnable idleOff = () -> { if (hudView.getParent() != null) screenOff(); };
+    private String pcVolume = "";
     /** Desconectado a mano: no reintentar hasta pulsar Conectar (deja sitio a otro dispositivo). */
     private boolean manualOff;
     private ChartView chart;
@@ -152,7 +156,9 @@ public final class MainActivity extends Activity {
         started = false;
         if (inputManager != null) inputManager.unregisterInputDeviceListener(deviceListener);
         if (touchPad != null) touchPad.releaseAll();
+        ui.removeCallbacks(idleOff);
         screenOn();
+        ui.removeCallbacks(idleOff);
         disconnect();
     }
 
@@ -238,6 +244,7 @@ public final class MainActivity extends Activity {
         WindowManager.LayoutParams lp = getWindow().getAttributes();
         lp.screenBrightness = savedBrightness;
         getWindow().setAttributes(lp);
+        resetIdle();
     }
 
     private void updateLink() {
@@ -352,8 +359,8 @@ public final class MainActivity extends Activity {
                 setPadWarn(m.isNull("err") ? null : m.optString("err", null), true);
                 break;
             case "vol":
-                Ui.set(foot, m.has("err") ? "Volumen del PC: " + m.optString("err")
-                        : "Volumen del PC: " + (m.isNull("v") ? "?" : m.optInt("v") + " %"));
+                pcVolume = m.has("err") ? m.optString("err") : (m.isNull("v") ? "?" : m.optInt("v") + " %");
+                showVolume();
                 break;
             case "pong": {
                 long sent = m.optLong("ct", -1);
@@ -447,6 +454,41 @@ public final class MainActivity extends Activity {
 
     // KEYCODE_BACK solo se atiende si viene del mando (algunos mandan BACK en vez de SELECT);
     // el gesto "atrás" del sistema no pasa por aquí.
+    @android.annotation.SuppressLint("GestureBackNavigation")
+    @Override public boolean dispatchTouchEvent(MotionEvent e) {
+        if (e.getActionMasked() == MotionEvent.ACTION_DOWN) resetIdle();   // solo toques de pantalla
+        return super.dispatchTouchEvent(e);
+    }
+
+    /** Reinicia la cuenta del apagado automático (Ajustes > Apagar pantalla sin toques). */
+    private void resetIdle() {
+        ui.removeCallbacks(idleOff);
+        int sec = prefs.getInt("idleOff", 0);
+        if (sec > 0 && hudView != null && hudView.getParent() != null && (blackout == null || blackout.getParent() == null)) {
+            ui.postDelayed(idleOff, sec * 1000L);
+        }
+    }
+
+    /** Botones de volumen en pantalla: cambian el volumen del Android y, si está conectado, el del PC. */
+    private void softVolume(int dir) {
+        android.media.AudioManager am = (android.media.AudioManager) getSystemService(AUDIO_SERVICE);
+        if (am != null) {
+            am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC,
+                    dir > 0 ? android.media.AudioManager.ADJUST_RAISE : android.media.AudioManager.ADJUST_LOWER, 0);
+        }
+        if (ws != null && ws.isOpen()) ws.send("{\"t\":\"vol\",\"d\":" + dir + "}");
+        showVolume();
+    }
+
+    private void showVolume() {
+        android.media.AudioManager am = (android.media.AudioManager) getSystemService(AUDIO_SERVICE);
+        String dev = am == null ? "?" : am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) + "/"
+                + am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC);
+        Ui.set(foot, "Volumen: Android " + dev + (pcVolume.isEmpty() ? "" : " · PC " + pcVolume));
+    }
+
+    // KEYCODE_BACK aquí es el botón Back/Select de un mando físico (se envía al PC como Back del
+    // mando virtual), no el gesto de volver de Android: los demás eventos van a super.
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Override public boolean dispatchKeyEvent(KeyEvent e) {
         int key = e.getKeyCode();
@@ -578,6 +620,7 @@ public final class MainActivity extends Activity {
     private void showHud() {
         if (hudView.getParent() == null) setContentView(hudView);
         layoutBody();
+        resetIdle();
     }
 
     private View buildLogin() {
@@ -797,9 +840,34 @@ public final class MainActivity extends Activity {
         // mando táctil encima del cuerpo (no de la barra superior ni del pie); los toques que no
         // caen en un control llegan a la interfaz de debajo
         android.widget.FrameLayout bodyFrame = new android.widget.FrameLayout(this);
-        bodyFrame.addView(body, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        android.widget.FrameLayout.LayoutParams bodyLp = new android.widget.FrameLayout.LayoutParams(-1, -1);
+        bodyLp.leftMargin = Ui.dp(this, 58);   // columna propia para los botones de volumen
+        bodyFrame.addView(body, bodyLp);
         touchPad = new TouchPadView(this, st -> { touchState = st; changed(true); });
         bodyFrame.addView(touchPad, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        LinearLayout vol = Ui.column(this);   // ▲ / ▼: volumen del Android y del PC, a la izquierda
+        for (int dir : new int[] {1, -1}) {
+            Button b = new Button(this);
+            b.setText(dir > 0 ? "▲" : "▼");
+            b.setTextSize(18);
+            b.setTextColor(Ui.TEXT);
+            b.setMinWidth(0);
+            b.setMinimumWidth(0);
+            b.setMinHeight(0);
+            b.setMinimumHeight(0);
+            b.setPadding(0, 0, 0, 0);
+            b.setBackground(Ui.rounded(0xB31D2027, Ui.LINE, 24, this));
+            b.setFocusable(false);
+            b.setContentDescription(dir > 0 ? "Subir volumen" : "Bajar volumen");
+            b.setOnClickListener(v -> softVolume(dir));
+            LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48));
+            blp.setMargins(0, Ui.dp(this, 6), 0, Ui.dp(this, 6));
+            vol.addView(b, blp);
+        }
+        android.widget.FrameLayout.LayoutParams vlp = new android.widget.FrameLayout.LayoutParams(-2, -2,
+                Gravity.START | Gravity.CENTER_VERTICAL);
+        vlp.leftMargin = Ui.dp(this, 6);
+        bodyFrame.addView(vol, vlp);
         root.addView(bodyFrame, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         root.addView(divider());
@@ -1011,6 +1079,14 @@ public final class MainActivity extends Activity {
         box.addView(slider("Opacidad", 20, 90, prefs.getInt("touchAlpha", 50), v -> {
             prefs.edit().putInt("touchAlpha", v).apply();
             updateTouchPad();
+        }));
+
+        box.addView(section("Pantalla"));
+        int idle = 0;
+        for (int i = 0; i < IDLE_SECONDS.length; i++) if (IDLE_SECONDS[i] == prefs.getInt("idleOff", 0)) idle = i;
+        box.addView(choice("Apagar sin toques", java.util.Arrays.asList("Nunca", "30 s", "1 min", "5 min", "10 min"), idle, i -> {
+            prefs.edit().putInt("idleOff", IDLE_SECONDS[i]).apply();
+            resetIdle();
         }));
 
         boolean has = game.pluginId != null;

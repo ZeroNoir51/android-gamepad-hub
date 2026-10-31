@@ -192,6 +192,8 @@ Solo puede haber un cliente conectado a la vez.
   En la app, además, el **mando táctil**: *Nunca*, *Automático* (solo si no hay un mando físico conectado) o *Siempre*, con su opacidad. Se suma al mando físico (por ejemplo, un botón en pantalla mientras usas los físicos).
 - **Debug:** muestra u oculta el diagnóstico del plugin.
 - **Apagar** (app): pantalla en negro con el brillo al mínimo para jugar solo con el mando; tocar la pantalla la enciende.
+- **Apagar sin toques** (app, *Ajustes > Pantalla*): nunca, 30 s, 1, 5 o 10 min sin tocar la pantalla; los botones del mando no cuentan como toques.
+- **▲ / ▼** (app, a la izquierda): suben y bajan a la vez el volumen del Android y el del PC.
 - **Volumen** (app): con la app conectada, los botones de volumen del Android suben y bajan el volumen del PC (salida de audio por defecto, con `wpctl` o `pactl`, sin root). En la web no es posible: el navegador no deja capturar esas teclas.
 - **Remapear** (web): si algún botón no corresponde ("mapeo no estándar"), pulsa *Remapear* y sigue los pasos; se guarda por mando en ese navegador. La app usa el mapeo estándar de Android.
 - **Táctil** (web): mando en pantalla, por si no hay mando físico. En la app se configura en *Ajustes*.
