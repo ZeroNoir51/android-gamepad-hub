@@ -148,6 +148,16 @@ class MangoHudTail:
         self.status = 'sin comprobar'
         self._next_scan = 0.0
 
+    def reset(self):
+        """Tras un error: suelta el archivo y vuelve a buscar el log más reciente."""
+        try:
+            if self.fh:
+                self.fh.close()
+        except OSError:
+            pass
+        self.path, self.fh, self.cols, self.buf, self.recent = None, None, None, '', []
+        self._next_scan = 0.0
+
     def _newest(self):
         if not self.folder.is_dir():
             self.status = f'no existe la carpeta {self.folder}'

@@ -12,6 +12,7 @@ import platform
 import string
 import sys
 import time
+import traceback
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -227,12 +228,26 @@ def main(argv=None):
                 pad.reset()   # no escribe nada si ya estaba neutro
 
     async def telemetry_loop():
+        # Un error al leer (p. ej. el log de MangoHud que el lanzador borra) no debe parar la
+        # telemetría para siempre: antes la tarea moría en silencio y no volvían FPS ni CPU/GPU.
         period = 1.0 / args.telemetry_hz
+        logged = set()
         while True:
             await asyncio.sleep(period)
             if hub.ws is None:
                 continue
-            await hub.send({'t': 'tel', **sysmon.sample(), **mango.poll()})
+            msg = {'t': 'tel'}
+            for name, source in (('sistema', sysmon.sample), ('mangohud', mango.poll)):
+                try:
+                    msg.update(source())
+                except Exception as ex:
+                    key = (name, type(ex).__name__, str(ex))
+                    if key not in logged:
+                        logged.add(key)
+                        print(f'[telemetry] error leyendo {name} (se sigue):\n{traceback.format_exc()}', flush=True)
+                    if name == 'mangohud':
+                        mango.reset()
+            await hub.send(msg)
 
     async def bridge_client(reader, writer):
         """Un lanzador conectado. Solo se aceptan mensajes de datos de juego."""
