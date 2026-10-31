@@ -21,13 +21,27 @@ ROOT = Path(__file__).resolve().parent.parent
 LOG_KEYS = {'output_folder', 'autostart_log', 'log_interval', 'log_duration', 'no_display'}
 
 
-def mangohud_env(env, log_dir):
-    """Añade el logging a la configuración de MangoHud que ya usa el jugador."""
+def mangohud_active(env, cmd):
+    """¿El jugador ya carga MangoHud en el juego (MANGOHUD=1 o el comando `mangohud`)?"""
+    return env.get('MANGOHUD') == '1' or any(Path(a).name == 'mangohud' for a in cmd)
+
+
+def mangohud_env(env, log_dir, cmd=()):
+    """Añade el logging a la configuración de MangoHud que ya usa el jugador.
+
+    Si el juego no carga MangoHud (p. ej. en Steam Big Picture/gamescope el contador de FPS es
+    mangoapp, otro proceso que no escribe nuestro log), se activa dentro del juego solo para
+    registrar: MANGOHUD=1 con no_display=1, sin dibujar un segundo contador.
+    """
     options = {'output_folder': str(log_dir), 'autostart_log': '1', 'log_interval': '0', 'log_duration': '0'}
+    hidden = not mangohud_active(env, cmd)
+    if hidden:
+        env['MANGOHUD'] = '1'
+        options['no_display'] = '1'
     if env.get('MANGOHUD_CONFIG'):                       # configuración en línea del jugador
         kept = [o for o in env['MANGOHUD_CONFIG'].split(',') if o.split('=', 1)[0].strip() not in LOG_KEYS]
         env['MANGOHUD_CONFIG'] = ','.join(kept + [f'{k}={v}' for k, v in options.items()])
-        return 'MANGOHUD_CONFIG'
+        return 'MANGOHUD_CONFIG' + (' (activado solo para registrar, sin dibujar)' if hidden else '')
     source = Path(env.get('MANGOHUD_CONFIGFILE') or Path.home() / '.config/MangoHud/MangoHud.conf')
     lines = []
     if source.is_file():
@@ -38,7 +52,8 @@ def mangohud_env(env, log_dir):
     target = paths.cache_dir() / 'mangohud.conf'
     target.write_text('\n'.join(lines) + '\n')
     env['MANGOHUD_CONFIGFILE'] = str(target)
-    return f'MANGOHUD_CONFIGFILE ({source if source.is_file() else "sin config previa"})'
+    return (f'MANGOHUD_CONFIGFILE ({source if source.is_file() else "sin config previa"})'
+            + (' (activado solo para registrar, sin dibujar)' if hidden else ''))
 
 
 def clean_logs(log_dir, since):
@@ -94,7 +109,7 @@ async def run(cmd):
     log_dir = None
     try:
         log_dir = paths.mangohud_dir()
-        print(f'[mangohud] logging vía {mangohud_env(env, log_dir)} en {log_dir}', flush=True)
+        print(f'[mangohud] logging vía {mangohud_env(env, log_dir, cmd)} en {log_dir}', flush=True)
     except Exception:
         print(f'[mangohud] no se pudo preparar el logging:\n{traceback.format_exc()}', flush=True)
 

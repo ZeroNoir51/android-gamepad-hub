@@ -203,6 +203,8 @@ Si el juego no muestra datos, el registro del lanzador está en `$XDG_RUNTIME_DI
 
 El lanzador añade a tu configuración de MangoHud (sin tocar tu archivo) las opciones de log, con una fila por frame. El log va a `~/.cache/gamepad/` (dentro de tu carpeta personal, que el contenedor de Steam comparte con los juegos de Proton). Para que no crezca, el servicio libera la parte ya leída cada 4 MB y el lanzador lo borra al cerrar el juego. Si usas configuración por juego (`wine-*.conf`), el lanzador toma como base la general (`MangoHud.conf`).
 
+Si el juego no carga MangoHud (por ejemplo en Steam Big Picture, donde el contador de FPS es *mangoapp*, otro proceso que no escribe el log), el lanzador lo activa dentro del juego solo para registrar (`MANGOHUD=1` con `no_display=1`): no dibuja un segundo contador. Si tú ya lo activas (`MANGOHUD=1` o el comando `mangohud`), se respeta tu overlay.
+
 ## Plugins
 
 Un plugin lee los datos de un juego concreto. Lo ejecuta solo el lanzador, sobre los descendientes del juego que lanzó (Linux, con `kernel.yama.ptrace_scope=1`, solo deja leer la memoria de un proceso a su ancestro: por eso no hace falta root). Es código Python con acceso de lectura a la memoria del juego: instala solo los que hayas revisado.
