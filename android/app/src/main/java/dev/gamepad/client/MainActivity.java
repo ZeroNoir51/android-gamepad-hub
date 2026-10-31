@@ -18,6 +18,7 @@ import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
@@ -81,6 +82,9 @@ public final class MainActivity extends Activity {
     private TextView cpuLoad, cpuTemp, mem, gpuLoad, gpuTemp, jitter;
     private View dot;
     private Button debugBtn, guideBtn, linkBtn;
+    /** Pantalla "apagada": capa negra con el brillo al mínimo; el mando sigue funcionando. */
+    private View blackout;
+    private float savedBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
     /** Desconectado a mano: no reintentar hasta pulsar Conectar (deja sitio a otro dispositivo). */
     private boolean manualOff;
     private ChartView chart;
@@ -148,6 +152,7 @@ public final class MainActivity extends Activity {
         started = false;
         if (inputManager != null) inputManager.unregisterInputDeviceListener(deviceListener);
         if (touchPad != null) touchPad.releaseAll();
+        screenOn();
         disconnect();
     }
 
@@ -208,6 +213,31 @@ public final class MainActivity extends Activity {
             connect();
         }
         updateLink();
+    }
+
+    /** Pantalla en negro y brillo al mínimo para jugar solo con el mando; tocarla la enciende. */
+    private void screenOff() {
+        if (blackout != null && blackout.getParent() != null) return;
+        if (touchPad != null) touchPad.releaseAll();
+        if (blackout == null) {
+            blackout = new View(this);
+            blackout.setBackgroundColor(0xFF000000);
+            blackout.setOnClickListener(v -> screenOn());
+        }
+        ((ViewGroup) getWindow().getDecorView()).addView(blackout,
+                new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        savedBrightness = lp.screenBrightness;
+        lp.screenBrightness = 0f;   // lo más bajo que permita el dispositivo
+        getWindow().setAttributes(lp);
+    }
+
+    private void screenOn() {
+        if (blackout == null || blackout.getParent() == null) return;
+        ((ViewGroup) blackout.getParent()).removeView(blackout);
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.screenBrightness = savedBrightness;
+        getWindow().setAttributes(lp);
     }
 
     private void updateLink() {
@@ -321,6 +351,10 @@ public final class MainActivity extends Activity {
             case "pad":
                 setPadWarn(m.isNull("err") ? null : m.optString("err", null), true);
                 break;
+            case "vol":
+                Ui.set(foot, m.has("err") ? "Volumen del PC: " + m.optString("err")
+                        : "Volumen del PC: " + (m.isNull("v") ? "?" : m.optInt("v") + " %"));
+                break;
             case "pong": {
                 long sent = m.optLong("ct", -1);
                 if (sent < 0) break;
@@ -415,6 +449,15 @@ public final class MainActivity extends Activity {
     // el gesto "atrás" del sistema no pasa por aquí.
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Override public boolean dispatchKeyEvent(KeyEvent e) {
+        int key = e.getKeyCode();
+        if ((key == KeyEvent.KEYCODE_VOLUME_UP || key == KeyEvent.KEYCODE_VOLUME_DOWN)
+                && hudView.getParent() != null && ws != null && ws.isOpen()) {
+            // Conectado al PC: los botones de volumen cambian el volumen del PC (la tele), no el del Android
+            if (e.getAction() == KeyEvent.ACTION_DOWN) {
+                ws.send("{\"t\":\"vol\",\"d\":" + (key == KeyEvent.KEYCODE_VOLUME_UP ? 1 : -1) + "}");
+            }
+            return true;
+        }
         if (hudView.getParent() == null || !(fromGamepad(e.getSource()) || KeyEvent.isGamepadButton(e.getKeyCode()))) {
             return super.dispatchKeyEvent(e);
         }
@@ -647,6 +690,11 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams klp = new LinearLayout.LayoutParams(-2, -2);
         klp.rightMargin = Ui.dp(this, 8);
         top.addView(linkBtn, klp);
+        Button dark = smallButton("Apagar");
+        dark.setOnClickListener(v -> screenOff());
+        LinearLayout.LayoutParams xlp = new LinearLayout.LayoutParams(-2, -2);
+        xlp.rightMargin = Ui.dp(this, 8);
+        top.addView(dark, xlp);
         Button settings = smallButton("Ajustes");
         settings.setOnClickListener(v -> showSettings());
         top.addView(settings);

@@ -149,6 +149,26 @@ public class MainActivityTest {
         assertNull(field("ws"));                          // sin reconexión automática
     }
 
+    @Test public void apagarPantallaYTocarParaEncender() throws Exception {
+        call("showHud", new Class<?>[0]);
+        call("screenOff", new Class<?>[0]);
+        View black = (View) field("blackout");
+        assertNotNull(black.getParent());
+        assertEquals(0f, a.getWindow().getAttributes().screenBrightness, 0.001f);
+        black.performClick();                              // tocar la pantalla negra la enciende
+        assertNull(black.getParent());
+        assertEquals(android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE,
+                a.getWindow().getAttributes().screenBrightness, 0.001f);
+    }
+
+    @Test public void volumenSinConexionEsDelAndroid() throws Exception {
+        call("showHud", new Class<?>[0]);
+        // Sin conexión con el PC, la tecla no se consume aquí (el sistema cambia el volumen del Android)
+        assertNull(field("ws"));
+        a.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_VOLUME_UP));
+        assertNull(field("ws"));
+    }
+
     @Test public void ajustesSeAbren() throws Exception {
         showHudWithGame();
         call("showSettings", new Class<?>[0]);

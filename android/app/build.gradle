@@ -10,8 +10,8 @@ android {
         applicationId 'dev.gamepad.client'
         minSdk 26
         targetSdk 36
-        versionCode 6
-        versionName '0.5'
+        versionCode 7
+        versionName '0.6'
     }
 
     // Firma de la versión release: keystore/keystore.properties (NO se sube al repositorio).

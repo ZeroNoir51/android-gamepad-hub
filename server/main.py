@@ -21,6 +21,7 @@ from . import VERSION, auth, paths, portraits, protocol, status
 from .auth import COOKIE, SESSION_TTL, AuthGuard, SessionStore
 from .pad import create_pad
 from .telemetry import MangoHudTail, SystemTelemetry
+from .volume import Volume
 
 ROOT = Path(__file__).resolve().parent.parent
 GAME_TYPES = {'game', 'gv'}
@@ -78,6 +79,8 @@ def main(argv=None):
     guard = AuthGuard(token)
     sessions = SessionStore(sessions_file)
     sysmon = SystemTelemetry()
+    volume = Volume()
+    print(f'[volumen] {volume.tool or "sin wpctl ni pactl: los botones de volumen no harán nada"}', flush=True)
     mango = MangoHudTail(mangohud_dir)
     game = {'meta': NO_GAME, 'writer': None}
     print(f'[telemetry] fuentes: {sysmon.sources()}', flush=True)
@@ -164,6 +167,14 @@ def main(argv=None):
             hub.last_input = time.monotonic()
         elif kind == 'ping':
             await ws.send_json({'t': 'pong', 'id': data.get('id'), 'ct': data.get('ct')})
+        elif kind == 'vol':                       # botones de volumen del cliente -> PC
+            delta = data.get('d')
+            if delta not in (1, -1) or isinstance(delta, bool):
+                await ws.send_json({'t': 'err', 'msg': 'vol: d debe ser 1 o -1'})
+                return
+            reply = await volume.change(delta)
+            if reply:
+                await ws.send_json(reply)
         else:
             await ws.send_json({'t': 'err', 'msg': f'tipo de mensaje desconocido: {kind!r}'})
 
