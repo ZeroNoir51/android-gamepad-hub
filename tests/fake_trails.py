@@ -1,8 +1,7 @@
 """Memoria sintética de Trails in the Sky 2nd Chapter (sora_2nd.exe).
 
-Imagen PE con las dos firmas de la tabla sora_2nd-v2.CT, el puntero global al bloque de
-estado y, dentro del bloque, Mira/sepith/tiempo de juego y un array de personajes con la
-estructura del script "Selected Character".
+Imagen PE con las firmas de la tabla sora_2nd-v2.CT, el puntero global al bloque de estado
+(Mira/sepith/tiempo de juego) y el código y la cadena de punteros de la Brave Gauge.
 """
 import struct
 
@@ -16,8 +15,6 @@ GLOBAL = BASE + DATA_RVA + 0x10        # puntero al bloque de estado
 HEAP = 0x20000000
 BLOCK_SIZE = 0x700000
 PLAYTIME = 0x20B650
-ROSTER_AT, STRIDE = 0x18000, 0x2A8
-PARTY_LIST = 0x5145C
 
 
 class FakeMemory(LinuxProcessMemory):
@@ -119,31 +116,26 @@ class FakeTrails:
         self.mem.put('u32', b - 8, mira)
         self.mem.put('f64', b, playtime)
 
-    def character(self, index, cid, level, exp, hp, hp_max, ep, ep_max, cp, cp_max=200,
-                  at=ROSTER_AT, stride=STRIDE):
-        r = self.block + at + index * stride
-        self.mem.put('u16', r, cid)
-        for off, v in ((0x4, level), (0x8, exp), (0xC, hp), (0x10, hp_max), (0x14, ep),
-                       (0x18, ep_max), (0x1C, cp), (0x20, cp_max)):
-            self.mem.put('u32', r + off, v)
-        for k in range(7):                          # STR..DEX
-            self.mem.put('u32', r + 0x24 + k * 4, 50 + level * 3 + k)
-        self.mem.put('u32', r + 0x40, 5)           # MOV
-        self.mem.put('u32', r + 0x44, 3)           # RNG
-        return r
-
-    def party(self, n=10, **kw):
-        ids = [0, 1, 2, 3, 4, 5, 6, 7, 100, 119][:n]
-        for i, cid in enumerate(ids):
-            lv = 20 + i
-            self.character(i, cid, lv, lv * 1000, 900 + i, 1000 + i * 10, 80 + i, 100 + i, 50 + i, **kw)
-        self.party_list(ids[:4])
-        return ids
-
-    def party_list(self, ids, at=PARTY_LIST):
-        """Lista de miembros del juego (u16 en orden; los 4 primeros forman el grupo)."""
-        for i in range(8):
-            self.mem.put('u16', self.block + at + i * 2, ids[i] if i < len(ids) else 0)
+    def brave(self, value, flags=0, code=True):
+        """Brave Gauge: el código de la firma "max Brave Rush on hit" y su cadena de punteros
+        [[[exe+G1]+0x2C50]+0x260]+0x48; tope según byte [[exe+G2]+0x10D] (bit 4: 700, 2: 600)."""
+        m = self.mem
+        heap = 0x31000000
+        if not any(start == heap for start, _ in m.regions):
+            m.map(heap, 0x4000)
+        g1, g2 = BASE + DATA_RVA + 0x300, BASE + DATA_RVA + 0x308
+        obj, rcx, rdx, flg = heap, heap + 0x1000, heap + 0x2000, heap + 0x3000
+        m.put('u64', g1, obj), m.put('u64', obj + 0x2C50, rcx), m.put('u64', rcx + 0x260, rdx)
+        m.put('u32', rdx + 0x48, value)
+        m.put('u64', g2, flg), m.put('u8', flg + 0x10D, flags)
+        if code:
+            at = BASE + TEXT_RVA + 0x7000
+            m.write(at, b'\x48\x8B\x05' + struct.pack('<i', g1 - (at + 7))
+                    + b'\x48\x8B\x88' + struct.pack('<I', 0x2C50)
+                    + b'\x48\x8B\x05' + struct.pack('<i', g2 - (at + 21))
+                    + b'\x48\x8B\x91' + struct.pack('<I', 0x260)
+                    + b'\x44\x0F\xB6\x80' + struct.pack('<I', 0x10D)
+                    + b'\x44\x8B\x4A\x48' + b'\x41\x8D\x0C\x19')
 
     def proc(self):
         return ProcInfo(self.mem.pid, MODULE, MODULE, f'Z:\\game\\{MODULE}')

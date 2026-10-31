@@ -61,17 +61,15 @@ public class ScreenshotTest {
         a.getSharedPreferences("gamepad", 0).edit().putInt("touchMode", 0).commit();
         call(a, "updateTouchPad");
         shot(a, new File(out, "apk-3-fondo-sin-tactil.png"));
-        // Estilo "anillo" (party_style ring): Trails in the Sky 2nd Chapter
+        // Trails in the Sky 2nd Chapter: Brave Gauge (kind gear), Mira y tiempo de juego
         set(a, "bgList", new java.util.ArrayList<>());
         set(a, "bgBitmap", null);
-        msg(a, "{\"t\":\"game\",\"state\":\"attached\",\"id\":\"trails2\",\"name\":\"Trails in the Sky 2nd Chapter\",\"pid\":7,\"style\":\"ring\",\"fields\":["
-                + ring(1) + "," + ring(2) + "," + ring(3) + "," + ring(4)
-                + ",{\"key\":\"mira\",\"label\":\"Mira\",\"tone\":\"gold\",\"section\":\"stats\"}]}");
-        msg(a, "{\"t\":\"gv\",\"v\":{" + member(1, "Estelle", 46, 3096, 3400, 757, 900, 187)
-                + "," + member(2, "Scherazard", 46, 2800, 2950, 640, 1100, 200)
-                + "," + member(3, "Kloe", 45, 1500, 2600, 1200, 1300, 35)
-                + "," + member(4, "Olivier", 46, 2500, 2700, 900, 1000, 120) + ",\"mira\":123456}}");
-        shot(a, new File(out, "apk-4-anillo.png"));
+        msg(a, "{\"t\":\"game\",\"state\":\"attached\",\"id\":\"trails2\",\"name\":\"Trails in the Sky 2nd Chapter\",\"pid\":7,\"fields\":["
+                + "{\"key\":\"brave\",\"label\":\"Brave\",\"kind\":\"gear\",\"max_key\":\"brave_max\",\"tone\":\"limit\",\"section\":\"stats\"},"
+                + "{\"key\":\"mira\",\"label\":\"Mira\",\"tone\":\"gold\",\"section\":\"stats\"},"
+                + "{\"key\":\"playtime\",\"label\":\"Tiempo de juego\",\"kind\":\"text\",\"section\":\"stats\"}]}");
+        msg(a, "{\"t\":\"gv\",\"v\":{\"brave\":5,\"brave_max\":5,\"mira\":83930,\"playtime\":\"23 h 25 min\"}}");
+        shot(a, new File(out, "apk-4-trails.png"));
     }
 
     private static String ring(int n) {

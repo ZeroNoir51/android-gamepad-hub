@@ -30,7 +30,7 @@ API_VERSION = 2   # 2: los lectores de motor salieron del hub; cada plugin trae 
 ID_RE = re.compile(r'^[a-z0-9_]{1,32}$')
 ENTRY_RE = re.compile(r'^[A-Za-z0-9_]+\.py$')
 VERSION_RE = re.compile(r'^\d+(\.\d+){0,3}$')
-KINDS = {'number', 'bar', 'text', 'image'}
+KINDS = {'number', 'bar', 'text', 'image', 'gear'}
 SECTIONS = {'party', 'stats', 'info', 'header'}
 TONES = {'hp', 'mp', 'limit', 'gold', 'xp', 'neutral'}
 PARTY_STYLES = {'bars', 'ring'}
@@ -42,7 +42,7 @@ from .memory import MemoryReadError, ProcessGone, descendants, iter_processes, o
 class Field:
     key: str
     label: str
-    kind: str = 'number'      # 'number' | 'bar' | 'text' | 'image' (URL /portraits/<plugin>/<archivo>)
+    kind: str = 'number'      # 'number' | 'bar' | 'text' | 'image' (URL /portraits/<plugin>/<archivo>) | 'gear' (número en un engranaje; max_key opcional)
     max_key: str = None       # para 'bar': clave del valor máximo
     tone: str = 'neutral'     # 'hp' | 'mp' | 'limit' | 'gold' | 'xp' | 'neutral' (color en el cliente)
     section: str = 'stats'    # dónde se muestra: 'party' | 'stats' | 'info' (debug) | 'header'

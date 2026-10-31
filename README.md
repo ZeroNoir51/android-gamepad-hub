@@ -224,7 +224,7 @@ mi_juego/
 
 `party_style` (opcional) elige cómo se dibujan las tarjetas del grupo: `bars` (por defecto: barras con valor / máximo) o `ring` (barras inclinadas y el primer campo de tono `limit` como anillo alrededor del retrato). Solo afecta al plugin que lo declara.
 
-Cada campo declara dónde se muestra con `section`: `party` (tarjetas por miembro, `slot` 1-4), `stats` (números grandes), `header` (junto al nombre del juego) o `info` (diagnóstico, solo con *Debug*). `kind`: `number`, `bar` (con `max_key`), `text` o `image`. `tone` (color): `hp`, `mp`, `limit`, `gold`, `xp` o `neutral`.
+Cada campo declara dónde se muestra con `section`: `party` (tarjetas por miembro, `slot` 1-4), `stats` (números grandes), `header` (junto al nombre del juego) o `info` (diagnóstico, solo con *Debug*). `kind`: `number`, `bar` (con `max_key`), `text`, `image` o `gear` (número dentro de un engranaje). `tone` (color): `hp`, `mp`, `limit`, `gold`, `xp` o `neutral`.
 
 Las imágenes las pone el usuario; el proyecto no incluye arte de ningún juego:
 
@@ -235,7 +235,7 @@ Las imágenes las pone el usuario; el proyecto no incluye arte de ningún juego:
 Plugins incluidos en el repositorio:
 
 - [`plugins/ffrs`](plugins/ffrs/README.md): FINAL FANTASY RESONANCE (Steam).
-- [`plugins/trails2`](plugins/trails2/README.md): Trails in the Sky 2nd Chapter (2026), por firmas (en pruebas).
+- [`plugins/trails2`](plugins/trails2/README.md): Trails in the Sky 2nd Chapter (2026): Brave Gauge, Mira y tiempo de juego, por firmas.
 - `plugins/demo_game.py`: para `tools/demo_game.py`.
 
 No uses plugins en juegos online con anti-cheat.

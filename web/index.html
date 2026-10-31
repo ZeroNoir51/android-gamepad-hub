@@ -70,6 +70,16 @@ button{font:inherit;color:inherit}
 .fill{height:100%;width:0;background:var(--tone);transition:width .2s linear}
 .gnums{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px}
 .gnum span{display:block;color:var(--muted);font-size:13px}
+/* kind 'gear': número dentro de un engranaje (p. ej. Brave Gauge de Trails) */
+.gear{display:flex;flex-direction:column;align-items:center;gap:2px}
+.gear .cog{position:relative;width:76px;height:76px}
+.gear svg{position:absolute;inset:0;width:100%;height:100%}
+.gear .teeth{fill:none;stroke:#3a302a;stroke-width:12;stroke-dasharray:9.4 6.3}
+.gear .rim{fill:none;stroke:url(#gearRim);stroke-width:7}
+.gear .core{fill:#17141a;stroke:#000;stroke-width:1.5}
+.gear b{position:absolute;inset:0;display:grid;place-items:center;font:italic 800 34px/1 var(--num);color:#ff5a36;
+  -webkit-text-stroke:1.5px #fff2e0;text-shadow:0 2px 4px rgba(0,0,0,.7);font-variant-numeric:tabular-nums}
+.gear span{color:var(--muted);font-size:13px}
 .gnum b{font-family:var(--num);font-variant-numeric:tabular-nums;font-size:24px;font-weight:500;color:var(--tone)}
 .empty{color:var(--muted);font-size:14px;max-width:34ch}
 .gerr{color:var(--bad);font-size:13px}
@@ -899,6 +909,14 @@ function onGameMeta(m) {
     } else if (f.section === 'info' || f.kind === 'text') {
       $('#ginfo').insertAdjacentHTML('beforeend', `<dt>${esc(f.label)}</dt><dd>—</dd>`);
       el = $('#ginfo').lastElementChild;
+    } else if (f.kind === 'gear') {
+      el = document.createElement('div'); el.className = 'gear';
+      el.innerHTML = '<div class="cog"><svg viewBox="0 0 100 100"><defs><linearGradient id="gearRim" x1="0" y1="0" x2="0" y2="1">'
+        + '<stop offset="0" stop-color="#ffb04a"/><stop offset="1" stop-color="#c8501e"/></linearGradient></defs>'
+        + '<circle class="teeth" cx="50" cy="50" r="42"/><circle class="rim" cx="50" cy="50" r="34"/>'
+        + '<circle class="core" cx="50" cy="50" r="29"/></svg><b>—</b></div>'
+        + `<span>${esc(f.label)}</span>`;
+      $('#gnums').prepend(el);                           // primero entre las estadísticas
     } else if (f.kind === 'bar') {
       el = document.createElement('div'); el.className = 'gf'; el.innerHTML = barHTML(f); $('#gbars').append(el);
     } else {

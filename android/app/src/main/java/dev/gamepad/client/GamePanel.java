@@ -59,6 +59,7 @@ final class GamePanel {
         BarView bar;
         SlantBarView slant;
         RingView ringArc;
+        GearView gear;
         ImageView image;
         String imageUrl;
         boolean isName;
@@ -161,6 +162,18 @@ final class GamePanel {
                     break;
                 }
                 default: {   // stats: número grande o barra suelta
+                    if ("gear".equals(b.kind)) {   // número en un engranaje (Brave Gauge de Trails)
+                        LinearLayout box = Ui.column(c);
+                        box.setGravity(Gravity.CENTER_HORIZONTAL);
+                        b.gear = new GearView(c);
+                        box.addView(b.gear, new LinearLayout.LayoutParams(Ui.dp(c, 76), Ui.dp(c, 76)));
+                        TextView lab = Ui.text(c, 13, Ui.MUTED);
+                        lab.setText(b.label);
+                        box.addView(lab);
+                        box.setPadding(0, 0, Ui.dp(c, 24), 0);
+                        stats.addView(box);
+                        break;
+                    }
                     LinearLayout box = Ui.column(c);
                     TextView lab = Ui.text(c, 13, Ui.MUTED);
                     lab.setText(b.label);
@@ -428,6 +441,10 @@ final class GamePanel {
                 continue;
             }
             if (b.row != null) b.row.setVisibility(raw == null ? View.GONE : View.VISIBLE);
+            if (b.gear != null) {
+                b.gear.setText(raw == null ? "—" : fmt(raw));
+                continue;
+            }
             if (raw == null) continue;
             if (b.ringArc != null || b.slant != null) {   // estilo anillo: solo el número, sin "/ máx"
                 Object maxRaw = b.maxKey == null || v.isNull(b.maxKey) ? null : v.opt(b.maxKey);
